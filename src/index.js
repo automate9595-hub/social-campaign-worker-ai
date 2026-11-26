@@ -62,7 +62,8 @@ function ensureSchema(env) {
    ["last_error", "TEXT"],
    ["started_at", "TEXT"],
    ["finished_at", "TEXT"],
-   ["post_note", "TEXT"]
+   ["post_note", "TEXT"],
+   ["plan_id", "TEXT"]
   ];
   for (const [name, type] of wanted) {
    if (!have.includes(name)) await db.prepare("ALTER TABLE sc_jobs ADD COLUMN " + name + " " + type).run();
@@ -87,6 +88,9 @@ async function promoteDue(env) {
  const stale = new Date(Date.now() - 8 * 60000).toISOString();
  // Una tarea "running" de mas de 8 min quedo colgada: no se repite sola para no duplicar.
  await env.DB.prepare("UPDATE sc_jobs SET status='failed',last_error='Quedó interrumpida. Revisá el grupo antes de reintentar.' WHERE status='running' AND started_at<?").bind(stale).run();
+ // Del calendario: si la PC estuvo apagada, lo atrasado mas de 12 h no se publica todo junto.
+ await env.DB.prepare("UPDATE sc_jobs SET status='failed',last_error='No salio a tiempo (PC apagada o sin conexion).' WHERE plan_id IS NOT NULL AND status IN ('pending','ready') AND scheduled_at<?")
+  .bind(new Date(Date.now() - 12 * 3600000).toISOString()).run();
  const r = await env.DB.prepare("UPDATE sc_jobs SET status='ready' WHERE status='pending' AND scheduled_at<=?").bind(nowIso).run();
  return r.meta?.changes || 0;
 }
@@ -293,14 +297,37 @@ async function handle(request, env) {
    return json({ ok: true });
   }
 
+  const LIST = "SELECT j.id,j.campaign_id,j.destination_id,j.scheduled_at,j.status,j.attempts,j.last_error,j.finished_at,j.post_note," +
+   "c.name AS campaign_name,d.name AS destination_name FROM sc_jobs j " +
+   "LEFT JOIN sc_campaigns c ON c.id=j.campaign_id LEFT JOIN sc_destinations d ON d.id=j.destination_id ";
+
   if (path === "/api/jobs" && method === "GET") {
-   const r = await env.DB.prepare(
-    "SELECT j.id,j.campaign_id,j.destination_id,j.scheduled_at,j.status,j.attempts,j.last_error,j.finished_at,j.post_note," +
-    "c.name AS campaign_name,d.name AS destination_name FROM sc_jobs j " +
-    "LEFT JOIN sc_campaigns c ON c.id=j.campaign_id LEFT JOIN sc_destinations d ON d.id=j.destination_id " +
-    "ORDER BY j.scheduled_at DESC LIMIT 200"
-   ).all();
+   const next = await env.DB.prepare(LIST + "WHERE j.status IN ('pending','ready','running') ORDER BY j.scheduled_at ASC LIMIT 100").all();
+   const old = await env.DB.prepare(LIST + "WHERE j.status IN ('done','failed') ORDER BY j.finished_at DESC LIMIT 200").all();
+   const n = await env.DB.prepare("SELECT COUNT(*) AS n FROM sc_jobs WHERE status IN ('pending','ready','running')").first();
+   return json({ items: [...(next.results || []), ...(old.results || [])], queued: n?.n || 0 });
+  }
+
+  if (path === "/api/calendar" && method === "GET") {
+   const r = await env.DB.prepare(LIST + "WHERE j.scheduled_at>=? AND j.scheduled_at<? ORDER BY j.scheduled_at LIMIT 2000")
+    .bind(url.searchParams.get("from"), url.searchParams.get("to")).all();
    return json({ items: r.results || [] });
+  }
+
+  if (path === "/api/plans" && method === "POST") {
+   const body = await request.json();
+   const campaign = Number(body.campaign_id);
+   const items = Array.isArray(body.items) ? body.items : [];
+   if (!items.length || items.length > 6000) return json({ error: "El plan debe tener entre 1 y 6000 publicaciones." }, 400);
+   if (items.some(x => !Number.isInteger(x[0]) || isNaN(Date.parse(x[1])))) return json({ error: "Plan no válido." }, 400);
+   if (!(await env.DB.prepare("SELECT id FROM sc_campaigns WHERE id=?").bind(campaign).first()))
+    return json({ error: "Campaña inexistente." }, 400);
+   const rows = JSON.stringify(items.map(x => [x[0], new Date(x[1]).toISOString()]));
+   await env.DB.prepare(
+    "INSERT INTO sc_jobs (campaign_id,destination_id,scheduled_at,status,plan_id) " +
+    "SELECT ?,json_extract(value,'$[0]'),json_extract(value,'$[1]'),'pending',? FROM json_each(?)"
+   ).bind(campaign, "p" + Date.now(), rows).run();
+   return json({ ok: true, created: items.length });
   }
 
   if (path === "/api/jobs" && method === "POST") {
@@ -382,6 +409,8 @@ async function handle(request, env) {
     job = await env.DB.prepare(
      JOB_SELECT + "WHERE j.status IN ('pending','ready','failed') ORDER BY j.scheduled_at ASC, j.id ASC LIMIT 1"
     ).first();
+   } else if (body.id) {
+    job = await env.DB.prepare(JOB_SELECT + "WHERE j.status='ready' AND j.id=?").bind(Number(body.id)).first();
    } else {
     job = await env.DB.prepare(
      JOB_SELECT + "WHERE j.status='ready' ORDER BY j.scheduled_at ASC, j.id ASC LIMIT 1"

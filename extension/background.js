@@ -1,11 +1,11 @@
 // Cada minuto pregunta al panel si hay una tarea lista y la publica en el grupo de Facebook
 // usando tu propia sesion de Chrome. Pausa entre grupos y tope diario incluidos.
-var VERSION = '1.4.0';
+var VERSION = '1.6.0';
 var busy = false;
 
 function get(k) { return chrome.storage.local.get(k); }
 function set(o) { return chrome.storage.local.set(o); }
-function today() { return new Date().toISOString().slice(0, 10); }
+function today() { return new Date().toLocaleDateString('en-CA'); }
 function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
 
 async function getCfg() {
@@ -105,16 +105,37 @@ async function publish(cfg, job, dry) {
     var out = await Promise.race([
       chrome.tabs.sendMessage(tabId, { type: 'publish', text: job.text, images: images, dry: !!dry }),
       new Promise(function (ok, no) { timer = setTimeout(function () { no(new Error('Facebook no respondio en 4 minutos. Revisa el grupo antes de reintentar.')); }, 240000); })
-    ]).finally(function () { clearTimeout(timer); });
+    ]).catch(async function (e) {
+      var cur = (await get('current')).current;
+      if (cur && cur.clicked && !/4 minutos/.test(e.message)) return { ok: true, note: 'Publicada (Facebook recargo la pagina).' };
+      throw e;
+    }).finally(function () { clearTimeout(timer); });
+    if (!out) {
+      var c2 = (await get('current')).current;
+      if (c2 && c2.clicked) out = { ok: true, note: 'Publicada (Facebook recargo la pagina).' };
+    }
     if (!out) throw new Error('Sin respuesta de la pagina de Facebook.');
     if (!out.ok) { if (!dry) await sleep(20000); var e = new Error(out.error || 'Error desconocido'); e.human = out.human; throw e; }
     return out;
   } finally {
-    if (!dry) { try { await chrome.windows.remove(win.id); } catch (e) {} }
+    if (!dry) { await sleep(1000); try { await chrome.windows.remove(win.id); } catch (e) {} }
   }
 }
 
-async function tick(dry) {
+// El resultado se guarda y se reenvia hasta que el panel lo recibe.
+async function flush(cfg) {
+  var p = (await get('pending')).pending;
+  if (!p) return true;
+  try { await apiJson(cfg, '/api/worker/jobs/' + p.id + '/result', 'POST', p.body); } catch (e) { return false; }
+  await set({ pending: null });
+  return true;
+}
+async function report(cfg, id, body) {
+  await set({ pending: { id: id, body: body }, current: null });
+  await flush(cfg);
+}
+
+async function tick(dry, forced) {
   if (busy) return;
   busy = true;
   var current = 'Trabajando';
@@ -128,22 +149,27 @@ async function tick(dry) {
     if (!cfg.workerUrl || !cfg.adminToken) { await status('Falta configurar la URL y la clave.'); return; }
     if (!cfg.enabled && !dry) { await status('En pausa (desactivado).'); await beat(cfg, 'Desactivado en la extension'); return; }
 
+    // Si la extension se reinicio en medio de una publicacion, se cierra esa tarea.
+    var cur = (await get('current')).current;
+    if (cur) await report(cfg, cur.id, cur.clicked ? { ok: true, note: 'Publicada (se corto la confirmacion; revisa el grupo).' } : { ok: false, error: 'Quedo interrumpida antes de publicar.' });
+    if (!(await flush(cfg))) { await status('Sin conexion con el panel; reintentando.'); return; }
+
     var st = (await get('st')).st || {};
     var count = st.day === today() ? (st.count || 0) : 0;
     var now = Date.now();
     if (!dry) {
       if (count >= cfg.maxPerDay) { await status('Limite diario alcanzado (' + cfg.maxPerDay + ').'); await beat(cfg, 'Limite diario alcanzado'); return; }
-      if (st.pauseUntil && now < st.pauseUntil) { await status('En pausa: ' + (st.pauseWhy || 'esperando')); await beat(cfg, 'En pausa'); return; }
-      if (st.nextAt && now < st.nextAt) { await status('Pausa entre publicaciones...'); await beat(cfg, 'Pausa entre publicaciones'); return; }
+      if (!forced && st.pauseUntil && now < st.pauseUntil) { await status('En pausa: ' + (st.pauseWhy || 'esperando')); await beat(cfg, 'En pausa'); return; }
+      if (!forced && st.nextAt && now < st.nextAt) { await status('Pausa entre publicaciones...'); await beat(cfg, 'Pausa entre publicaciones'); return; }
     }
 
     var job;
     try {
-      job = (await apiJson(cfg, '/api/worker/claim', 'POST', { peek: !!dry })).job;
+      job = (await apiJson(cfg, '/api/worker/claim', 'POST', { peek: !!dry, id: forced || undefined })).job;
     } catch (e) { await status('Sin conexion con el panel: ' + e.message); return; }
 
     if (!job) {
-      await status(dry ? 'No hay tareas para probar. Programa una en el panel.' : 'Conectado. Esperando tareas.');
+      if (!forced) await status(dry ? 'No hay tareas para probar. Programa una en el panel.' : 'Conectado. Esperando tareas.');
       await beat(cfg, 'Esperando tareas');
       return;
     }
@@ -151,21 +177,24 @@ async function tick(dry) {
     await status('Publicando en ' + job.group_name + '...');
     await beat(cfg, 'Publicando en ' + job.group_name);
     await addLog((dry ? 'Prueba' : 'Tarea ' + job.id) + ': ' + job.campaign_name + ' -> ' + job.group_name);
+    if (!dry) await set({ current: { id: job.id, clicked: false } });
     try {
       if (!job.group_url) throw new Error('El grupo no tiene enlace.');
       if (!String(job.text || '').trim()) throw new Error('La campania no tiene texto.');
       var res = await publish(cfg, job, dry);
       if (dry) { await status('Prueba lista: revisa la ventana de Facebook (no se publico).'); await addLog('Prueba OK, sin publicar.'); return; }
-      await apiJson(cfg, '/api/worker/jobs/' + job.id + '/result', 'POST', { ok: true, note: res.note || '' });
+      await report(cfg, job.id, { ok: true, note: res.note || '' });
       var gap = (cfg.minDelaySec + Math.random() * Math.max(0, cfg.maxDelaySec - cfg.minDelaySec)) * 1000;
       await set({ st: { day: today(), count: count + 1, nextAt: Date.now() + gap } });
+      chrome.alarms.create('next', { when: Date.now() + gap + 1000 });
       await addLog('Publicado en ' + job.group_name + (res.note ? ' (' + res.note + ')' : ''));
-      await status('Publicado. Pausa de ' + Math.round(gap / 1000) + ' s.');
+      await status('Publicado en ' + job.group_name + '. La proxima en cola sale a las ' + new Date(Date.now() + gap).toLocaleTimeString('es-AR') + '.');
     } catch (e) {
       await addLog('Error: ' + e.message);
       await status('Error: ' + e.message);
       if (!dry) {
-        try { await apiJson(cfg, '/api/worker/jobs/' + job.id + '/result', 'POST', { ok: false, error: e.message }); } catch (e2) {}
+        await report(cfg, job.id, { ok: false, error: e.message });
+        chrome.alarms.create('next', { when: Date.now() + (e.human ? 15 * 60000 : 2 * 60000) + 1000 });
         var pause = e.human ? 15 * 60000 : 2 * 60000;
         await set({ st: { day: st.day === today() ? st.day : today(), count: count, nextAt: Date.now() + 60000, pauseUntil: Date.now() + pause, pauseWhy: e.human ? 'Facebook pide verificacion' : 'revisa el error' } });
       }
@@ -173,12 +202,14 @@ async function tick(dry) {
   } finally {
     clearInterval(keep);
     busy = false;
+    var f = (await get('forced')).forced;
+    if (f && !dry) { await set({ forced: null }); setTimeout(function () { tick(false, f); }, 3000); }
   }
 }
 
 // Si la alarma se perdio, se vuelve a crear cada vez que la extension despierta.
 chrome.alarms.get('tick').then(function (a) { if (!a) chrome.alarms.create('tick', { periodInMinutes: 1 }); });
-chrome.alarms.onAlarm.addListener(function (a) { if (a.name === 'tick') tick(false); });
+chrome.alarms.onAlarm.addListener(function (a) { if (a.name === 'tick' || a.name === 'next') tick(false); });
 chrome.runtime.onInstalled.addListener(function () { chrome.alarms.create('tick', { periodInMinutes: 1 }); tick(false); });
 chrome.runtime.onStartup.addListener(function () { tick(false); });
 // Se ejecuta en el contexto de la pagina, sobre el campo que tiene el foco.
@@ -207,19 +238,26 @@ async function fromPanel(msg, origin) {
   await beat(cfg, 'Conectado');
   if (msg.action !== 'run') return 'Conectada (versión ' + VERSION + ').';
   if (!cfg.enabled) return 'La extensión está desactivada: marcá "Worker activo" en su ventanita.';
-  if (busy) return 'Ya hay una publicación en curso; la siguiente sale cuando termine.';
+  if (busy) {
+    if (msg.id) await set({ forced: msg.id });
+    return 'Hay una publicación en curso; esta sale apenas termine.';
+  }
   var st = (await get('st')).st || {};
   delete st.pauseUntil;
   await set({ st: st });
   if (st.day === today() && st.count >= cfg.maxPerDay) return 'Se alcanzó el límite de ' + cfg.maxPerDay + ' publicaciones por día.';
   var wait = Math.ceil(((st.nextAt || 0) - Date.now()) / 1000);
-  if (wait > 0) return 'Pausa entre grupos: la siguiente sale sola en ' + (wait < 60 ? 'menos de 2 minutos' : 'unos ' + Math.ceil(wait / 60 + 1) + ' minutos') + '.';
-  tick(false).catch(function (e) { status('Error: ' + e.message); });
+  if (!msg.id && wait > 0) return 'Pausa entre grupos: la siguiente sale sola en ' + (wait < 60 ? 'menos de 2 minutos' : 'unos ' + Math.ceil(wait / 60 + 1) + ' minutos') + '.';
+  tick(false, msg.id).catch(function (e) { status('Error: ' + e.message); });
   return 'Orden recibida. Abriendo el grupo...';
 }
 
 chrome.runtime.onMessage.addListener(function (msg, sender, send) {
   if (msg && msg.type === 'alive') return;
+  if (msg && msg.type === 'clicked') {
+    get('current').then(function (o) { return o.current ? set({ current: { id: o.current.id, clicked: true } }) : null; }).then(function () { send({}); });
+    return true;
+  }
   if (msg && msg.type === 'panel' && sender.tab) {
     fromPanel(msg, new URL(sender.url).origin).then(function (t) { send({ text: t }); }, function (e) { send({ text: 'Error: ' + e.message }); });
     return true;

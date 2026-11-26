@@ -5,23 +5,22 @@ export const HTML = String.raw`<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="color-scheme" content="light dark">
 <title>Social Campaign</title>
 <style>
-:root{
- --bg:#eef1f6;--panel:#ffffff;--soft:#f4f6fb;--line:#dde3ee;
- --ink:#12203a;--muted:#5d6b85;--accent:#2b59ff;--accent-ink:#ffffff;--accent-soft:#e3eaff;
- --ok:#0f8a5f;--ok-soft:#dcf5ea;--warn:#a86400;--warn-soft:#fdf0d4;--bad:#c4314b;--bad-soft:#fde5ea;
- --radius:14px;
- --font:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
-}
-@media (prefers-color-scheme:dark){
- :root{
+:root{color-scheme:dark;
   --bg:#0c111c;--panel:#141b2b;--soft:#19223a;--line:#25304a;
   --ink:#e8edf8;--muted:#93a1bf;--accent:#6b8bff;--accent-ink:#0b1220;--accent-soft:#1d2a52;
   --ok:#4fd3a0;--ok-soft:#133a2e;--warn:#f3b84b;--warn-soft:#3a2d12;--bad:#ff7d92;--bad-soft:#431a25;
- }
+  --radius:14px;
+ --font:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
 }
+:root[data-theme=light]{color-scheme:light;
+ --bg:#eef1f6;--panel:#ffffff;--soft:#f4f6fb;--line:#dde3ee;
+ --ink:#12203a;--muted:#5d6b85;--accent:#2b59ff;--accent-ink:#ffffff;--accent-soft:#e3eaff;
+ --ok:#0f8a5f;--ok-soft:#dcf5ea;--warn:#a86400;--warn-soft:#fdf0d4;--bad:#c4314b;--bad-soft:#fde5ea;
+}
+.item.done{background:var(--ok-soft);border-color:var(--ok)}
+.item.running{border-color:var(--warn)}
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%}
 body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 var(--font);min-height:100vh}
@@ -109,6 +108,13 @@ textarea{min-height:130px;resize:vertical}
 #toast.show{opacity:1;transform:translate(-50%,0)}
 #toast.bad{background:var(--bad);color:#fff}
 [hidden]{display:none!important}
+.cal{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px;text-align:center}
+.cal button{min-height:50px;border:1px solid var(--line);border-radius:8px;background:var(--soft);cursor:pointer;padding:2px}
+.cal button small{display:block;color:var(--accent);font-weight:700;min-height:1.4em}
+.cal button.sel{border:2px solid var(--accent);background:var(--accent-soft)}
+.cal button.ok{background:var(--ok-soft)}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chips label{border:1px solid var(--line);border-radius:8px;padding:5px 9px;background:var(--soft);cursor:pointer}
 
 #mbar{display:none;align-items:center;gap:8px;font-size:13px;color:var(--muted);margin:-10px 0 14px}
 @media (max-width:820px){
@@ -135,6 +141,7 @@ textarea{min-height:130px;resize:vertical}
    <button class="tab" role="tab" data-tab="groups"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-5.5 6-5.5s6 2.2 6 5.5"/><path d="M16 5.2a3.2 3.2 0 0 1 0 5.6M18 14.8c1.7.7 3 2.4 3 5.2"/></svg>Grupos<span class="n" id="nGroups">0</span></button>
    <button class="tab" role="tab" data-tab="campaigns"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M7 9h10M7 13h6"/></svg>Campañas<span class="n" id="nCamps">0</span></button>
    <button class="tab" role="tab" data-tab="schedule"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>Programar<span class="n" id="nQueue">0</span></button>
+   <button class="tab" role="tab" data-tab="calendar"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Calendario</button>
    <button class="tab" role="tab" data-tab="activity"><svg viewBox="0 0 24 24"><path d="M3 12h4l3-7 4 14 3-7h4"/></svg>Actividad</button>
   </nav>
   <div class="runner"><b><i class="dot" id="rDot"></i><span id="rTitle" style="margin:0;color:inherit">Worker de Windows</span></b><span id="rInfo">Sin conexión todavía</span></div>
@@ -142,7 +149,9 @@ textarea{min-height:130px;resize:vertical}
 
  <main>
   <div id="mbar"><i class="dot" id="rDot2"></i><span id="rInfo2">Worker de Windows: sin conexión</span></div>
-  <div class="card" role="status"><b>Extensión: </b><span id="extText">no detectada. Instalala o recargala y apretá F5.</span></div>
+  <div class="card" role="status"><b>Extensión: </b><span id="extText">no detectada. Instalala o recargala y apretá F5.</span>
+   <div class="actions"><button class="btn ghost sm" data-act="theme">Cambiar tema</button><button class="btn ghost sm" data-act="sound">Probar sonidos</button></div></div>
+  <div class="card"><b>Próxima publicación: </b><span id="timer" style="font-size:22px;font-weight:700;font-variant-numeric:tabular-nums">sin cola</span></div>
   <div class="stats">
    <div class="stat"><b id="sGroups">0</b><span>Grupos</span></div>
    <div class="stat"><b id="sCamps">0</b><span>Campañas</span></div>
@@ -219,12 +228,46 @@ textarea{min-height:130px;resize:vertical}
      <div><label class="f" for="jobTime">Hora</label><input type="time" id="jobTime"></div>
     </div>
     <label class="f" for="fGap">Minutos entre un grupo y otro</label>
-    <input type="number" id="fGap" min="0" value="5" style="width:100px">
+    <input type="number" id="fGap" min="0" value="0" style="width:100px">
     <div class="actions"><button class="btn" data-act="schedule">Programar</button></div>
    </div>
-   <h2 style="font-size:16px;margin:22px 0 10px">En cola</h2>
+   <h2 style="font-size:16px;margin:22px 0 10px">En cola y publicaciones de hoy</h2>
    <div class="actions" style="margin:0 0 10px"><button class="btn del sm" data-act="clearQueue">Cancelar toda la cola</button></div>
    <div class="list" id="queue"></div>
+  </section>
+
+  <section id="tab-calendar" hidden>
+   <h1>Calendario</h1>
+   <p class="lead">Tocá un día para ver qué sale. La PC tiene que quedar encendida, sin suspenderse y con Chrome abierto.</p>
+   <div class="card">
+    <div class="actions" style="margin:0 0 10px;align-items:center"><button class="btn ghost sm" data-act="prevMonth">Anterior</button><b id="calTitle"></b><button class="btn ghost sm" data-act="nextMonth">Siguiente</button></div>
+    <div id="calGrid" class="cal"></div>
+    <div class="list" id="calDay" style="margin-top:12px"></div>
+   </div>
+   <div class="card">
+    <h2>Programar por mes o por año</h2>
+    <label class="f" for="pCamp">Campaña</label><select id="pCamp"></select>
+    <div class="row">
+     <div><label class="f" for="pMode">Qué días</label><select id="pMode"><option value="months">Meses marcados</option><option value="days">Días que toco en el calendario</option></select></div>
+     <div><label class="f" for="pYear">Año</label><select id="pYear"></select></div>
+    </div>
+    <div id="pMonthsBox">
+     <label class="f">Meses <button class="btn ghost sm" data-act="allMonths">Enero a diciembre</button></label><div class="chips" id="pMonths"></div>
+     <label class="f">Días de la semana</label><div class="chips" id="pWeek"></div>
+    </div>
+    <label class="f">Grupos <button class="btn ghost sm" data-act="pAll">Todos</button> <button class="btn ghost sm" data-act="pNone">Ninguno</button></label>
+    <input type="text" id="pLetter" placeholder="Marcar los que empiezan con (ej: A, V)">
+    <div class="pick" id="pGroups" style="max-height:220px;overflow:auto"></div>
+    <label class="f" for="pDist">Cómo repartir</label>
+    <select id="pDist"><option value="rotate">En orden, rotando los grupos</option><option value="random">Grupos al azar</option><option value="all">Todos los marcados, cada día</option></select>
+    <div class="row">
+     <div><label class="f" for="pTimes">Publicaciones por día (si rota o es al azar)</label><input type="number" id="pTimes" min="1" max="15" value="3"></div>
+     <div><label class="f" for="pHour">Horario</label><select id="pHour"><option value="even">Repartido parejo</option><option value="random">Horas al azar</option></select></div>
+     <div><label class="f" for="pFrom">Desde</label><input type="time" id="pFrom" value="09:00"></div>
+     <div><label class="f" for="pTo">Hasta</label><input type="time" id="pTo" value="21:00"></div>
+    </div>
+    <div class="actions"><button class="btn" data-act="savePlan">Programar plan</button></div>
+   </div>
   </section>
 
   <section id="tab-activity" hidden>
@@ -258,7 +301,7 @@ function fail(e){toast(e.message||String(e),true)}
 
 /* ---------- Pestañas ---------- */
 function showTab(name){
- ["groups","campaigns","schedule","activity"].forEach(function(t){$("tab-"+t).hidden=(t!==name)});
+ ["groups","campaigns","schedule","calendar","activity"].forEach(function(t){$("tab-"+t).hidden=(t!==name)});
  var bs=document.querySelectorAll(".tab");
  for(var i=0;i<bs.length;i++)bs[i].setAttribute("aria-selected",bs[i].dataset.tab===name?"true":"false");
  try{localStorage.setItem("sc_tab",name)}catch(e){}
@@ -278,7 +321,7 @@ function renderAll(){
  var done=S.jobs.filter(function(j){return j.status==="done"});
  $("sGroups").textContent=S.dest.length;$("nGroups").textContent=S.dest.length;
  $("sCamps").textContent=S.camp.length;$("nCamps").textContent=S.camp.length;
- $("sQueue").textContent=queue.length;$("nQueue").textContent=queue.length;
+ $("sQueue").textContent=S.queued;$("nQueue").textContent=S.queued;
  $("sDone").textContent=done.length;
 
  $("destinations").innerHTML=S.dest.map(function(x){
@@ -307,7 +350,9 @@ function renderAll(){
  }).join("")||'<div class="empty" style="grid-column:1/-1">Primero agregá grupos.</div>';
  applyFilter();
 
- $("queue").innerHTML=queue.map(jobHtml).join("")||'<div class="empty">No hay publicaciones en cola.</div>';
+ var hoy=new Date().toDateString();
+ var shown=S.jobs.filter(function(j){return queue.indexOf(j)>=0||(j.finished_at&&new Date(j.finished_at).toDateString()===hoy)});
+ $("queue").innerHTML=shown.map(jobHtml).join("")||'<div class="empty">No hay publicaciones en cola.</div>';
  var hist=S.jobs.filter(function(j){return j.status==="done"||j.status==="failed"});
  $("history").innerHTML=hist.map(jobHtml).join("")||'<div class="empty">Todavía no hay actividad.</div>';
 }
@@ -342,7 +387,7 @@ function applyFilter(){
 function mark(fn){boxes().forEach(function(c){c.checked=fn(c)});count()}
 function jobHtml(j){
  var run=(j.status==="pending"||j.status==="ready"||j.status==="failed");
- return '<div class="item"><div class="t"><b>'+esc(j.campaign_name||"Campaña")+' <span class="badge '+esc(j.status)+'">'+(LABEL[j.status]||esc(j.status))+'</span></b>'+
+ return '<div class="item '+esc(j.status)+'"><div class="t"><b>'+esc(j.campaign_name||"Campaña")+' <span class="badge '+esc(j.status)+'">'+(LABEL[j.status]||esc(j.status))+'</span></b>'+
   '<small>'+esc(j.destination_name||"Grupo eliminado")+' · '+esc(fmt(j.status==="done"||j.status==="failed"?(j.finished_at||j.scheduled_at):j.scheduled_at))+'</small>'+
   (j.post_note?'<small>'+esc(j.post_note)+'</small>':'')+
   (j.last_error?'<div class="err">'+esc(j.last_error)+'</div>':'')+'</div>'+
@@ -353,8 +398,8 @@ function jobHtml(j){
 async function refresh(quiet){
  try{
   var r=await Promise.all([api("/api/destinations"),api("/api/campaigns"),api("/api/jobs"),api("/api/runner")]);
-  S.dest=r[0].items||[];S.camp=r[1].items||[];S.jobs=r[2].items||[];
-  renderAll();renderRunner(r[3]);
+  S.dest=r[0].items||[];S.camp=r[1].items||[];S.jobs=r[2].items||[];S.queued=r[2].queued||0;
+  renderAll();renderRunner(r[3]);planForm();await loadCal();
   if(!quiet)toast("Datos actualizados");
  }catch(e){if(!quiet)fail(e)}
 }
@@ -394,15 +439,132 @@ function renderNewThumbs(){
 
 /* ---------- Acciones ---------- */
 /* ---------- Extensión ---------- */
-function ext(action){window.postMessage({sc:"panel",action:action,token:TOKEN},location.origin)}
+function ext(action,id){window.postMessage({sc:"panel",action:action,token:TOKEN,id:id},location.origin)}
 window.addEventListener("message",function(e){
  if(e.source!==window||!e.data)return;
  if(e.data.sc==="ready")ext("hello");
- if(e.data.sc==="ext"){$("extText").textContent=e.data.text;refresh(true)}
+ if(e.data.sc==="ext"){var t=e.data.text;$("extText").textContent=t;
+  if(t.indexOf("Publicando en ")===0)beep("start");else if(t.indexOf("Publicado en ")===0)beep("done");else if(t.indexOf("Error")===0)beep("error");
+  refresh(true)}
 });
 ext("hello");
 
+/* ---------- Sonidos: inicio (sube), publicado (tres notas), error (grave) ---------- */
+var audio;
+function unlock(){try{audio=audio||new (window.AudioContext||window.webkitAudioContext)();audio.resume()}catch(e){}}
+function beep(kind){
+ unlock();if(!audio)return;
+ var notes={start:[440,660],done:[660,880,1320],error:[220,160]}[kind];
+ notes.forEach(function(f,i){
+  var o=audio.createOscillator(),g=audio.createGain(),t=audio.currentTime+i*0.18;
+  o.frequency.value=f;g.gain.setValueAtTime(0.25,t);g.gain.exponentialRampToValueAtTime(0.001,t+0.16);
+  o.connect(g);g.connect(audio.destination);o.start(t);o.stop(t+0.17);
+ });
+ window.lastSounds=(window.lastSounds||[]).concat(kind);
+}
+document.addEventListener("click",unlock);
+function theme(t){document.documentElement.setAttribute("data-theme",t);try{localStorage.setItem("sc_theme",t)}catch(e){}}
+try{theme(localStorage.getItem("sc_theme")||"dark")}catch(e){theme("dark")}
+
+/* ---------- Cronómetro ---------- */
+var nextAt=0;
+window.addEventListener("message",function(e){if(e.source===window&&e.data&&e.data.sc==="next"){nextAt=e.data.at;tickTimer()}});
+function tickTimer(){
+ var el=$("timer");
+ if(S.jobs.some(function(j){return j.status==="running"})){el.textContent="publicando ahora";return}
+ var times=S.jobs.filter(function(j){return j.status==="pending"||j.status==="ready"}).map(function(j){return Date.parse(j.scheduled_at)});
+ if(!times.length){el.textContent="sin cola";return}
+ var s=Math.ceil((Math.max(nextAt,Math.min.apply(null,times))-Date.now())/1000);
+ if(s<=0){el.textContent="en instantes";return}
+ var h=Math.floor(s/3600),m=Math.floor(s%3600/60);
+ el.textContent=(h?h+":":"")+String(m).padStart(2,"0")+":"+String(s%60).padStart(2,"0");
+}
+setInterval(tickTimer,1000);
+
+/* ---------- Calendario ---------- */
+var C={month:new Date(new Date().getFullYear(),new Date().getMonth(),1),jobs:[],day:"",days:{}};
+function key(d){return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0")}
+function checks(id,names,values,on){$(id).innerHTML=names.map(function(n,i){return '<label><input type="checkbox" value="'+values[i]+'"'+(on(values[i])?" checked":"")+'> '+n+'</label>'}).join("")}
+function picked(id){return Array.prototype.map.call(document.querySelectorAll("#"+id+" input:checked"),function(c){return Number(c.value)})}
+function drawCal(){
+ var y=C.month.getFullYear(),m=C.month.getMonth(),lead=(C.month.getDay()+6)%7,total=new Date(y,m+1,0).getDate();
+ $("calTitle").textContent=C.month.toLocaleDateString("es-AR",{month:"long",year:"numeric"});
+ var h=["Lu","Ma","Mi","Ju","Vi","Sá","Do"].map(function(d){return "<span>"+d+"</span>"}).join("")+new Array(lead+1).join("<span></span>");
+ for(var d=1;d<=total;d++){
+  var k=key(new Date(y,m,d)),list=C.jobs.filter(function(j){return key(new Date(j.scheduled_at))===k});
+  var ok=list.length&&list.every(function(j){return j.status==="done"});
+  h+='<button data-act="pickDay" data-day="'+k+'" class="'+(ok?"ok ":"")+((C.days[k]||C.day===k)?"sel":"")+'">'+d+'<small>'+(list.length||"")+'</small></button>';
+ }
+ $("calGrid").innerHTML=h;
+ var day=C.jobs.filter(function(j){return key(new Date(j.scheduled_at))===C.day});
+ $("calDay").innerHTML=C.day?("<b>"+C.day.split("-").reverse().join("/")+": "+day.length+" publicaciones</b>"+day.map(jobHtml).join("")):"";
+}
+async function loadCal(){
+ var y=C.month.getFullYear(),m=C.month.getMonth();
+ var r=await api("/api/calendar?from="+new Date(y,m,1).toISOString()+"&to="+new Date(y,m+1,1).toISOString());
+ C.jobs=r.items||[];drawCal();
+}
+function planForm(){
+ var s=$("pCamp"),v=s.value;s.innerHTML=$("jobCampaign").innerHTML;if(v)s.value=v;
+ var on=picked("pGroups");
+ checks("pGroups",active().map(function(x){return esc(x.name)}),active().map(function(x){return x.id}),function(i){return on.indexOf(i)>=0});
+}
+function shuffle(a){for(var i=a.length-1;i>0;i--){var j=Math.floor(Math.random()*(i+1)),t=a[i];a[i]=a[j];a[j]=t}return a}
+function buildPlan(){
+ var groups=picked("pGroups"),dates=[],now=Date.now();
+ if($("pMode").value==="days")dates=Object.keys(C.days).sort().map(function(k){return new Date(k+"T00:00")});
+ else{
+  var year=Number($("pYear").value),week=picked("pWeek");
+  picked("pMonths").forEach(function(m){for(var d=new Date(year,m,1);d.getMonth()===m;d.setDate(d.getDate()+1))if(week.indexOf(d.getDay())>=0)dates.push(new Date(d))});
+ }
+ function mins(id){var p=$(id).value.split(":");return Number(p[0])*60+Number(p[1])}
+ var from=mins("pFrom"),span=mins("pTo")-from,dist=$("pDist").value,items=[],turn=0,over=false;
+ if(!(span>0))throw Error("La hora Hasta tiene que ser mayor que Desde");
+ dates.forEach(function(date){
+  var n=dist==="all"?groups.length:Math.max(1,Number($("pTimes").value)||1);
+  if(n>15)over=true;
+  var pool=shuffle(groups.slice());
+  var times=[];for(var i=0;i<n;i++)times.push(from+($("pHour").value==="random"?Math.floor(Math.random()*span):Math.floor(span*i/n)));
+  times.sort(function(a,b){return a-b}).forEach(function(t,i){
+   var g=dist==="rotate"?groups[turn++%groups.length]:pool[i%pool.length];
+   var at=new Date(date.getFullYear(),date.getMonth(),date.getDate(),0,t);
+   if(at.getTime()>now&&g)items.push([g,at.toISOString()]);
+  });
+ });
+ if(over)throw Error("Son más de 15 publicaciones por día, el máximo de la extensión. Marcá menos grupos o veces.");
+ return items;
+}
+var MONTHS=["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"],thisYear=new Date().getFullYear();
+checks("pMonths",MONTHS,MONTHS.map(function(x,i){return i}),function(i){return i===new Date().getMonth()});
+checks("pWeek",["Lu","Ma","Mi","Ju","Vi","Sá","Do"],[1,2,3,4,5,6,0],function(){return true});
+$("pYear").innerHTML=[thisYear,thisYear+1].map(function(y){return "<option>"+y+"</option>"}).join("");
+document.addEventListener("change",function(e){if(e.target.id==="pMode"){$("pMonthsBox").hidden=e.target.value==="days";C.days={};drawCal()}});
+document.addEventListener("input",function(e){
+ if(e.target.id!=="pLetter")return;
+ var l=norm(e.target.value).split(/[\s,;]+/).filter(Boolean);
+ Array.prototype.forEach.call(document.querySelectorAll("#pGroups input"),function(c){var n=norm(c.parentNode.textContent).replace(/^[^a-z0-9]+/,"");c.checked=l.some(function(x){return n.indexOf(x)===0})});
+});
+
 var ACT={
+ prevMonth(){C.month.setMonth(C.month.getMonth()-1);C.day="";return loadCal()},
+ nextMonth(){C.month.setMonth(C.month.getMonth()+1);C.day="";return loadCal()},
+ pickDay(el){var k=el.dataset.day;C.day=k;if($("pMode").value==="days"){if(C.days[k])delete C.days[k];else C.days[k]=1}drawCal()},
+ allMonths(){Array.prototype.forEach.call(document.querySelectorAll("#pMonths input"),function(c){c.checked=true})},
+ pAll(){Array.prototype.forEach.call(document.querySelectorAll("#pGroups input"),function(c){c.checked=true})},
+ pNone(){Array.prototype.forEach.call(document.querySelectorAll("#pGroups input"),function(c){c.checked=false})},
+ async savePlan(){
+  var camp=Number($("pCamp").value);
+  if(!camp)return toast("Elegí una campaña",true);
+  if(!picked("pGroups").length)return toast("Marcá al menos un grupo",true);
+  var items=buildPlan();
+  if(!items.length)return toast("No quedan fechas futuras con esa selección",true);
+  if(items.length>6000)return toast("Son más de 6000. Elegí menos meses.",true);
+  if(!confirm("Se van a programar "+items.length+" publicaciones. ¿Confirmás?"))return;
+  await api("/api/plans","POST",{campaign_id:camp,items:items});
+  C.days={};await refresh(true);toast(items.length+" publicaciones programadas");
+ },
+ theme(){theme(document.documentElement.getAttribute("data-theme")==="light"?"dark":"light")},
+ sound(){beep("start");setTimeout(function(){beep("done")},700)},
  async addDest(){
   var name=$("destName").value.trim(),url=$("destUrl").value.trim();
   if(!name)return toast("Escribí un nombre",true);
@@ -460,7 +622,7 @@ var ACT={
   await api("/api/destinations/"+x.id,"PATCH",{enabled:!x.enabled});await refresh(true);
   toast(x.enabled?"Grupo desactivado":"Grupo activado");
  },
- async clearQueue(){if(!confirm("¿Cancelar todas las publicaciones en cola?"))return;await api("/api/jobs/pending","DELETE");await refresh(true);toast("Cola vaciada")},
+ async clearQueue(){if(!confirm("¿Cancelar TODAS las publicaciones en cola, incluidas las del calendario?"))return;await api("/api/jobs/pending","DELETE");await refresh(true);toast("Cola vaciada")},
  async schedule(){
   var camp=Number($("jobCampaign").value),ids=[],cbs=document.querySelectorAll("#jobGroups input:checked");
   for(var i=0;i<cbs.length;i++)ids.push(Number(cbs[i].value));
@@ -478,7 +640,7 @@ var ACT={
   await refresh(true);
   toast(r.created+(r.created===1?" publicación en cola":" publicaciones en cola"));
  },
- async runJob(el){await api("/api/jobs/"+el.dataset.id+"/run","POST");ext("run");await refresh(true);toast("Enviada al worker")},
+ async runJob(el){await api("/api/jobs/"+el.dataset.id+"/run","POST");ext("run",Number(el.dataset.id));await refresh(true);toast("Enviada al worker")},
  async delJob(el){await api("/api/jobs/"+el.dataset.id,"DELETE");await refresh(true);toast("Quitada")},
  refresh(){return refresh(false)}
 };

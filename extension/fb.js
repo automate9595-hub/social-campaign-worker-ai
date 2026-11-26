@@ -98,7 +98,7 @@
       b.style.cssText = 'position:fixed;left:10px;bottom:10px;z-index:2147483647;max-width:360px;padding:10px 14px;border-radius:8px;background:#12203a;color:#fff;font:14px/1.4 Arial,sans-serif;pointer-events:none';
       document.documentElement.appendChild(b);
     }
-    b.textContent = 'Social Campaign 1.4.0: ' + text;
+    b.textContent = 'Social Campaign 1.6.0: ' + text;
   }
   function step(text) { banner(text); try { chrome.runtime.sendMessage({ type: 'step', text: text }); } catch (e) {} }
 
@@ -195,9 +195,10 @@
     var ready = await waitFor(function () { return post.getAttribute('aria-disabled') !== 'true'; }, 20000);
     if (!ready) fail('El boton Publicar quedo desactivado.');
     step('Publicando');
+    await chrome.runtime.sendMessage({ type: 'clicked' });
     click(post);
 
-    var closed = await waitFor(function () { return !document.contains(dialog) || !visible(dialog); }, 120000);
+    var closed = await waitFor(function () { return !document.contains(dialog) || !visible(dialog) || !hasText(msg.text); }, 120000);
     if (!closed) fail('La publicacion no se confirmo (el cuadro sigue abierto).');
     await sleep(3000);
     var body = (document.body.innerText || '');

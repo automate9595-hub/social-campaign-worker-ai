@@ -1,6 +1,6 @@
 // Cada minuto pregunta al panel si hay una tarea lista y la publica en el grupo de Facebook
 // usando tu propia sesion de Chrome. Pausa entre grupos y tope diario incluidos.
-var VERSION = '1.6.0';
+var VERSION = '1.7.0';
 var busy = false;
 
 function get(k) { return chrome.storage.local.get(k); }
@@ -236,6 +236,8 @@ async function fromPanel(msg, origin) {
   cfg.adminToken = msg.token;
   await set({ cfg: cfg });
   await beat(cfg, 'Conectado');
+  if (msg.action === 'captureStart') { await set({ capture: true, captured: [] }); return 'Capturador activado. Entrá a tus grupos en Facebook.'; }
+  if (msg.action === 'captureStop') { await set({ capture: false }); return 'Capturador detenido.'; }
   if (msg.action !== 'run') return 'Conectada (versión ' + VERSION + ').';
   if (!cfg.enabled) return 'La extensión está desactivada: marcá "Worker activo" en su ventanita.';
   if (busy) {
@@ -252,8 +254,29 @@ async function fromPanel(msg, origin) {
   return 'Orden recibida. Abriendo el grupo...';
 }
 
+// De a uno, para no pisar la lista ni duplicar grupos.
+var saving = Promise.resolve();
+async function saveGroup(msg) {
+  var o = await get(['capture', 'captured']);
+  var list = o.captured || [];
+  if (!o.capture || list.some(function (g) { return g.slug === msg.slug; })) return;
+  var cfg = await getCfg();
+  var items = (await apiJson(cfg, '/api/destinations')).items || [];
+  var exists = items.some(function (d) {
+    var m = String(d.destination_url || '').match(/\/groups\/([^\/?#]+)/);
+    return m && m[1] === msg.slug;
+  });
+  if (!exists) await apiJson(cfg, '/api/destinations', 'POST', { name: msg.name.slice(0, 120), url: 'https://www.facebook.com/groups/' + msg.slug });
+  list.unshift({ slug: msg.slug, name: msg.name, old: exists });
+  await set({ captured: list });
+}
+
 chrome.runtime.onMessage.addListener(function (msg, sender, send) {
   if (msg && msg.type === 'alive') return;
+  if (msg && msg.type === 'group') {
+    saving = saving.then(function () { return saveGroup(msg); }).catch(function (e) { return addLog('Capturador: ' + e.message); });
+    return;
+  }
   if (msg && msg.type === 'clicked') {
     get('current').then(function (o) { return o.current ? set({ current: { id: o.current.id, clicked: true } }) : null; }).then(function () { send({}); });
     return true;

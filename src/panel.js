@@ -143,6 +143,7 @@ textarea{min-height:130px;resize:vertical}
    <button class="tab" role="tab" data-tab="schedule"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>Programar<span class="n" id="nQueue">0</span></button>
    <button class="tab" role="tab" data-tab="calendar"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Calendario</button>
    <button class="tab" role="tab" data-tab="activity"><svg viewBox="0 0 24 24"><path d="M3 12h4l3-7 4 14 3-7h4"/></svg>Actividad</button>
+   <button class="tab" role="tab" data-tab="capture"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="3"/></svg>Capturador</button>
   </nav>
   <div class="runner"><b><i class="dot" id="rDot"></i><span id="rTitle" style="margin:0;color:inherit">Worker de Windows</span></b><span id="rInfo">Sin conexión todavía</span></div>
  </aside>
@@ -270,6 +271,16 @@ textarea{min-height:130px;resize:vertical}
    </div>
   </section>
 
+  <section id="tab-capture" hidden>
+   <h1>Capturador de grupos</h1>
+   <p class="lead">Activalo, andá a Facebook en este Chrome y entrá a tus grupos de a uno, unos 5 segundos en cada uno. Se guardan solos en Grupos.</p>
+   <div class="card">
+    <div class="actions" style="margin:0"><button class="btn" data-act="capStart" id="capStart">Activar capturador</button><button class="btn del" data-act="capStop" id="capStop" disabled>Stop</button></div>
+    <p id="capInfo">Detenido.</p>
+   </div>
+   <div class="list" id="capList"></div>
+  </section>
+
   <section id="tab-activity" hidden>
    <h1>Actividad</h1>
    <p class="lead">Publicaciones ya hechas y las que fallaron.</p>
@@ -301,7 +312,7 @@ function fail(e){toast(e.message||String(e),true)}
 
 /* ---------- Pestañas ---------- */
 function showTab(name){
- ["groups","campaigns","schedule","calendar","activity"].forEach(function(t){$("tab-"+t).hidden=(t!==name)});
+ ["groups","campaigns","schedule","calendar","activity","capture"].forEach(function(t){$("tab-"+t).hidden=(t!==name)});
  var bs=document.querySelectorAll(".tab");
  for(var i=0;i<bs.length;i++)bs[i].setAttribute("aria-selected",bs[i].dataset.tab===name?"true":"false");
  try{localStorage.setItem("sc_tab",name)}catch(e){}
@@ -545,7 +556,18 @@ document.addEventListener("input",function(e){
  Array.prototype.forEach.call(document.querySelectorAll("#pGroups input"),function(c){var n=norm(c.parentNode.textContent).replace(/^[^a-z0-9]+/,"");c.checked=l.some(function(x){return n.indexOf(x)===0})});
 });
 
+/* ---------- Capturador ---------- */
+window.addEventListener("message",function(e){
+ if(e.source!==window||!e.data||e.data.sc!=="capture")return;
+ var d=e.data;$("capStart").disabled=d.on;$("capStop").disabled=!d.on;
+ $("capInfo").textContent=(d.on?"Capturando. ":"Detenido. ")+d.list.length+" grupos en esta captura.";
+ $("capList").innerHTML=d.list.map(function(g){return '<div class="item"><div class="t"><b>'+esc(g.name)+'</b><small>'+(g.old?"Ya estaba guardado":"Guardado")+'</small></div></div>'}).join("");
+ refresh(true);
+});
+
 var ACT={
+ capStart(){ext("captureStart")},
+ capStop(){ext("captureStop")},
  prevMonth(){C.month.setMonth(C.month.getMonth()-1);C.day="";return loadCal()},
  nextMonth(){C.month.setMonth(C.month.getMonth()+1);C.day="";return loadCal()},
  pickDay(el){var k=el.dataset.day;C.day=k;if($("pMode").value==="days"){if(C.days[k])delete C.days[k];else C.days[k]=1}drawCal()},

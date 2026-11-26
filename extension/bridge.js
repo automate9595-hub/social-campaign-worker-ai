@@ -15,8 +15,15 @@
     });
   }
   next();
+  function capture() {
+    chrome.storage.local.get(['capture', 'captured'], function (o) {
+      window.postMessage({ sc: 'capture', on: !!o.capture, list: o.captured || [] }, location.origin);
+    });
+  }
+  capture();
   chrome.storage.onChanged.addListener(function (c) {
-    if (c.st) next(); if (c.status && c.status.newValue) say(c.status.newValue.text); });
+    if (c.st) next();
+    if (c.capture || c.captured) capture(); if (c.status && c.status.newValue) say(c.status.newValue.text); });
   // Mantiene despierta la extension mientras el panel esta abierto.
   setInterval(function () { try { chrome.runtime.sendMessage({ type: 'alive' }); } catch (e) {} }, 20000);
   window.postMessage({ sc: 'ready' }, location.origin);

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Social Campaign Worker",
-  "version": "1.6.0",
+  "version": "1.7.0",
   "description": "Publica en tus grupos de Facebook las tareas programadas en tu panel Social Campaign.",
   "permissions": [
     "storage",
@@ -29,7 +29,8 @@
         "https://web.facebook.com/*"
       ],
       "js": [
-        "fb.js"
+        "fb.js",
+        "capture.js"
       ],
       "run_at": "document_idle"
     },

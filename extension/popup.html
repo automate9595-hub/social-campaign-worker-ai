@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8">
+<style>
+:root{--bg:#fff;--soft:#f4f6fb;--line:#dde3ee;--ink:#12203a;--muted:#5d6b85;--accent:#2b59ff}
+@media (prefers-color-scheme:dark){:root{--bg:#141b2b;--soft:#19223a;--line:#25304a;--ink:#e8edf8;--muted:#93a1bf;--accent:#6b8bff}}
+body{width:340px;margin:0;padding:14px;background:var(--bg);color:var(--ink);font:13px/1.45 system-ui,"Segoe UI",Arial,sans-serif}
+h1{font-size:15px;margin:0 0 8px}
+.st{background:var(--soft);border:1px solid var(--line);border-radius:10px;padding:8px 10px;margin-bottom:10px;overflow-wrap:anywhere}
+label{display:block;font-weight:600;color:var(--muted);margin:8px 0 3px;font-size:12px}
+input[type=text],input[type=password],input[type=number]{width:100%;box-sizing:border-box;padding:7px 9px;border:1px solid var(--line);border-radius:8px;background:var(--soft);color:var(--ink);font:inherit}
+.row{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap}
+button{border:1px solid var(--line);background:var(--soft);color:var(--ink);border-radius:8px;padding:7px 11px;font:inherit;font-weight:600;cursor:pointer}
+button.p{background:var(--accent);border-color:var(--accent);color:#fff}
+.log{margin-top:10px;max-height:120px;overflow:auto;color:var(--muted);font-size:12px}
+.log div{padding:2px 0;border-bottom:1px solid var(--line);overflow-wrap:anywhere}
+.chk{display:flex;gap:6px;align-items:center;margin-top:8px}
+</style></head><body>
+<h1>Social Campaign Worker</h1>
+<div class="st" id="st">Cargando...</div>
+<label>URL de tu panel (Worker de Cloudflare)</label>
+<input type="text" id="url" placeholder="https://social-campaign-worker-ai.xxxx.workers.dev">
+<label>Clave de administrador</label>
+<input type="password" id="tok">
+<div class="chk"><input type="checkbox" id="on"><span>Worker activo (publica solo)</span></div>
+<div class="row">
+ <button class="p" id="save">Guardar</button>
+ <button id="now">Buscar tareas ya</button>
+ <button id="dry">Modo prueba</button>
+</div>
+<div class="log" id="log"></div>
+<script src="popup.js"></script>
+</body></html>

@@ -9,7 +9,11 @@ jobs:
     steps:
       - name: Descargar repositorio
         uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
       - name: Validar sintaxis JavaScript
-        run: node --check src/index.js
+        run: |
+          for f in src/*.js tools/*.js extension/*.js; do node --check "$f"; done
       - name: Comprobar archivos esenciales
         run: test -f wrangler.toml && test -f schema.sql

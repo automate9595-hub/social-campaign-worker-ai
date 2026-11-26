@@ -1,395 +1,415 @@
-const HTML = `<!DOCTYPE html>
-<html lang="es">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Social Campaign AI</title>
-<style>
-*{box-sizing:border-box}
-body{margin:0;background:#10131b;color:#f4f6fb;font-family:Arial,sans-serif}
-header{padding:22px;background:#171d2a;border-bottom:1px solid #293246}
-h1{margin:0;color:#fff;font-size:24px}
-h1 span{color:#55e6ff}
-main{max-width:1100px;margin:auto;padding:18px}
-.card{background:#1a2130;border:1px solid #303b50;border-radius:14px;padding:18px;margin:14px 0}
-input,textarea,select,button{width:100%;padding:12px;margin:7px 0;border-radius:8px;border:1px solid #38445b;background:#101722;color:white;font-size:15px}
-textarea{min-height:110px;resize:vertical}
-button{background:#00c8e8;color:#06131b;font-weight:bold;border:none;cursor:pointer}
-button.secondary{background:#303d54;color:white}
-button.danger{background:#c74353;color:white}
-.row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-.item{border:1px solid #38445b;padding:12px;margin:8px 0;border-radius:9px;overflow-wrap:anywhere}
-.small{font-size:12px;color:#aebbd0}
-.status{color:#55e6ff}
-#msg{padding:10px;color:#55e6ff;overflow-wrap:anywhere}
-@media(max-width:650px){.row{grid-template-columns:1fr}}
-</style>
-</head>
-<body>
-<header><h1>Social Campaign <span>AI</span></h1><p>Panel de campañas y programación</p></header>
-<main>
-<div class="card">
-<h3>Administrador</h3>
-<input id="token" type="password" placeholder="SOCIAL_ADMIN_TOKEN">
-<button onclick="saveToken()">Ingresar / Guardar acceso</button>
-<button class="secondary" onclick="forgetToken()">Cerrar sesión</button>
-<div id="msg">Ingresá la contraseña de administrador.</div>
-</div>
+import { HTML } from "./panel.js";
 
-<div class="card">
-<h3>1. Destinos de publicación</h3>
-<input id="destName" placeholder="Nombre del grupo de Facebook">
-<input id="destUrl" placeholder="Enlace del grupo">
-<button onclick="addDestination()">Agregar destino</button>
-<div id="destinations"></div>
-</div>
+/* ------------------------------------------------------------------ */
+/*  Utilidades                                                         */
+/* ------------------------------------------------------------------ */
 
-<div class="card">
-<h3>2. Crear campaña</h3>
-<input id="campName" placeholder="Nombre de la campaña">
-<textarea id="campContent" placeholder="Texto de la publicación"></textarea>
-<button class="secondary" onclick="rewrite()">Mejorar texto con Gemini</button>
-<div class="row">
-<div><label>Inicio</label><input type="datetime-local" id="campStart"></div>
-<div><label>Fin (opcional)</label><input type="datetime-local" id="campEnd"></div>
-</div>
-<button onclick="addCampaign()">Guardar campaña</button>
-<div id="campaigns"></div>
-</div>
-
-<div class="card">
-<h3>3. Programar publicaciones</h3>
-<select id="jobCampaign"></select>
-<select id="jobDestination"></select>
-<div class="row">
-<div><label>Fecha</label><input type="date" id="jobDate"></div>
-<div><label>Hora</label><input type="time" id="jobTime"></div>
-</div>
-<button onclick="scheduleJob()">Programar</button>
-<p class="small">Cada tarea se guarda con su fecha, hora, destino y campaña. La publicación real requiere conectar el ejecutor de Facebook.</p>
-<div id="jobs"></div>
-</div>
-
-<div class="card">
-<h3>Estado del sistema</h3>
-<button class="secondary" onclick="refresh()">Actualizar panel</button>
-<div id="system"></div>
-</div>
-</main>
-<script>
-let token=sessionStorage.getItem('sc_token')||'';
-let destinations=[],campaigns=[];
-
-document.getElementById('token').value=token;
-function message(t){document.getElementById('msg').textContent=t}
-function saveToken(){
- token=document.getElementById('token').value.trim();
- if(!token){message('Ingresá el token.');return}
- sessionStorage.setItem('sc_token',token);
- message('Token guardado en esta sesión.');
- refresh();
-}
-function forgetToken(){
- token='';
- sessionStorage.removeItem('sc_token');
- document.getElementById('token').value='';
- message('Sesión cerrada.');
-}
-async function api(path,method='GET',body=null){
- const headers={'X-Admin-Token':token};
- if(body)headers['Content-Type']='application/json';
- const r=await fetch(path,{method,headers,body:body?JSON.stringify(body):null});
- const data=await r.json().catch(()=>({error:'Respuesta inválida'}));
- if(!r.ok)throw Error(data.error||'Error '+r.status);
- return data;
-}
-function esc(s){
- return String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-}
-async function addDestination(){
- try{
- const name=document.getElementById('destName').value.trim();
- const url=document.getElementById('destUrl').value.trim();
- if(!name)throw Error('Ingresá un nombre.');
- await api('/api/destinations','POST',{name,url});
- document.getElementById('destName').value='';
- document.getElementById('destUrl').value='';
- await refresh();
- message('Destino guardado.');
- }catch(e){message(e.message)}
-}
-async function addCampaign(){
- try{
- const name=document.getElementById('campName').value.trim();
- const content=document.getElementById('campContent').value.trim();
- const start=document.getElementById('campStart').value;
- const end=document.getElementById('campEnd').value;
- if(!name||!content||!start)throw Error('Completá nombre, contenido e inicio.');
- await api('/api/campaigns','POST',{name,content,start_date:start,end_date:end||null});
- await refresh();
- message('Campaña guardada.');
- }catch(e){message(e.message)}
-}
-async function rewrite(){
- try{
- const content=document.getElementById('campContent').value.trim();
- if(!content)throw Error('Escribí primero el texto.');
- message('Gemini está trabajando...');
- const r=await api('/api/rewrite','POST',{content});
- document.getElementById('campContent').value=r.content;
- message('Texto mejorado.');
- }catch(e){message(e.message)}
-}
-async function scheduleJob(){
- try{
- const campaign_id=Number(document.getElementById('jobCampaign').value);
- const destination_id=Number(document.getElementById('jobDestination').value);
- const date=document.getElementById('jobDate').value;
- const time=document.getElementById('jobTime').value;
- if(!campaign_id||!destination_id||!date||!time)throw Error('Completá todos los datos.');
- await api('/api/jobs','POST',{campaign_id,destination_id,scheduled_at:date+'T'+time});
- await refresh();
- message('Publicación programada y guardada.');
- }catch(e){message(e.message)}
-}
-async function refresh(){
- if(!token){message('Ingresá el token de administrador.');return}
- try{
- const [d,c,j,s]=await Promise.all([
- api('/api/destinations'),api('/api/campaigns'),api('/api/jobs'),api('/api/status')
- ]);
- destinations=d.items||[];
- campaigns=c.items||[];
- document.getElementById('destinations').innerHTML=destinations.map(x=>
- '<div class="item"><b>'+esc(x.name)+'</b><br><span class="small">'+esc(x.destination_url||'Sin URL')+'</span><br><button class="danger" onclick="deleteDestination('+x.id+')">Eliminar</button></div>'
- ).join('')||'No hay destinos.';
- document.getElementById('campaigns').innerHTML=campaigns.map(x=>
- '<div class="item"><b>'+esc(x.name)+'</b><br>'+esc(x.content)+'<br><span class="small">'+esc(x.start_date)+'</span><br><button class="danger" onclick="deleteCampaign('+x.id+')">Eliminar</button></div>'
- ).join('')||'No hay campañas.';
- document.getElementById('jobCampaign').innerHTML=campaigns.map(x=>'<option value="'+x.id+'">'+esc(x.name)+'</option>').join('');
- document.getElementById('jobDestination').innerHTML=destinations.map(x=>'<option value="'+x.id+'">'+esc(x.name)+'</option>').join('');
- document.getElementById('jobs').innerHTML=(j.items||[]).map(x=>
- '<div class="item"><b>'+esc(x.campaign_name||'Campaña')+'</b><br>Destino: '+esc(x.destination_name||'')+'<br>Fecha: '+esc(x.scheduled_at)+'<br>Estado: <span class="status">'+esc(x.status)+'</span><br>'+(x.last_error?'<span class="small">'+esc(x.last_error)+'</span>':'')+'<br><button class="danger" onclick="deleteJob('+x.id+')">Cancelar tarea</button></div>'
- ).join('')||'No hay tareas programadas.';
- document.getElementById('system').textContent='Panel conectado. Campañas: '+campaigns.length+' | Destinos: '+destinations.length+' | Tareas: '+(j.items||[]).length+' | Worker activo.';
- message('Datos actualizados.');
- }catch(e){message(e.message)}
-}
-async function deleteDestination(id){
- if(!confirm('¿Eliminar este destino?'))return;
- try{await api('/api/destinations/'+id,'DELETE');await refresh()}catch(e){message(e.message)}
-}
-async function deleteCampaign(id){
- if(!confirm('¿Eliminar esta campaña?'))return;
- try{await api('/api/campaigns/'+id,'DELETE');await refresh()}catch(e){message(e.message)}
-}
-async function deleteJob(id){
- if(!confirm('¿Cancelar esta tarea?'))return;
- try{await api('/api/jobs/'+id,'DELETE');await refresh()}catch(e){message(e.message)}
-}
-</script>
-</body>
-</html>`;
-
-const corsHeaders = {
- "Access-Control-Allow-Origin": "*",
- "Access-Control-Allow-Headers": "Content-Type, X-Admin-Token",
- "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS"
+const SECURITY_HEADERS = {
+ "X-Content-Type-Options": "nosniff",
+ "Referrer-Policy": "no-referrer",
+ "Cache-Control": "no-store"
 };
 
-function json(data,status=200){
- return new Response(JSON.stringify(data),{
+function json(data, status = 200) {
+ return new Response(JSON.stringify(data), {
   status,
-  headers:{...corsHeaders,"Content-Type":"application/json"}
+  headers: { ...SECURITY_HEADERS, "Content-Type": "application/json" }
  });
 }
 
-function html(){
- return new Response(HTML,{
-  headers:{...corsHeaders,"Content-Type":"text/html;charset=UTF-8"}
+// La clave de administrador sale del secreto SOCIAL_ADMIN_TOKEN de Cloudflare
+// y se inyecta en el panel al servirlo: no hay que escribirla y no queda
+// guardada en el repositorio.
+function html(env) {
+ const token = JSON.stringify(String(env.SOCIAL_ADMIN_TOKEN || "")).replace(/</g, "\\u003c");
+ return new Response(HTML.replace('"__ADMIN_TOKEN__"', () => token), {
+  headers: { ...SECURITY_HEADERS, "Content-Type": "text/html;charset=UTF-8" }
  });
 }
 
-async function rewriteText(content,env){
- const keys=(env.GEMINI_API_KEYS||env.GEMINI_API_KEY||"")
- .split(",").map(x=>x.trim()).filter(Boolean);
- if(!keys.length)throw Error("Falta GEMINI_API_KEYS.");
+function safeEq(a, b) {
+ if (a.length !== b.length) return false;
+ let r = 0;
+ for (let i = 0; i < a.length; i++) r |= a.charCodeAt(i) ^ b.charCodeAt(i);
+ return r === 0;
+}
 
- const models=["gemini-2.5-flash","gemini-2.0-flash"];
- let last="No se pudo generar el texto.";
+const MAX_IMAGES_PER_CAMPAIGN = 6;
+const MAX_B64_LENGTH = 1500000;
 
- for(const key of keys){
-  for(const model of models){
-   try{
-    const controller=new AbortController();
-    const timeout=setTimeout(()=>controller.abort(),12000);
-    const r=await fetch(
-     "https://generativelanguage.googleapis.com/v1beta/models/"+model+":generateContent?key="+encodeURIComponent(key),
+/* ------------------------------------------------------------------ */
+/*  Esquema (se crea / completa solo, no hay que ejecutar SQL a mano)  */
+/* ------------------------------------------------------------------ */
+
+let schemaReady = null;
+
+function ensureSchema(env) {
+ if (schemaReady) return schemaReady;
+ schemaReady = (async () => {
+  const db = env.DB;
+  await db.batch([
+   db.prepare("CREATE TABLE IF NOT EXISTS sc_destinations (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, platform TEXT NOT NULL DEFAULT 'facebook', destination_type TEXT NOT NULL DEFAULT 'group', destination_url TEXT, enabled INTEGER NOT NULL DEFAULT 1)"),
+   db.prepare("CREATE TABLE IF NOT EXISTS sc_campaigns (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, content TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'active', start_date TEXT, end_date TEXT)"),
+   db.prepare("CREATE TABLE IF NOT EXISTS sc_jobs (id INTEGER PRIMARY KEY AUTOINCREMENT, campaign_id INTEGER NOT NULL, destination_id INTEGER, scheduled_at TEXT, status TEXT NOT NULL DEFAULT 'pending')"),
+   db.prepare("CREATE TABLE IF NOT EXISTS sc_media (id INTEGER PRIMARY KEY AUTOINCREMENT, campaign_id INTEGER NOT NULL, mime TEXT NOT NULL, data TEXT NOT NULL, thumb TEXT, size INTEGER)"),
+   db.prepare("CREATE TABLE IF NOT EXISTS sc_kv (k TEXT PRIMARY KEY, v TEXT)")
+  ]);
+
+  const info = await db.prepare("PRAGMA table_info(sc_jobs)").all();
+  const have = (info.results || []).map(r => r.name);
+  const wanted = [
+   ["attempts", "INTEGER NOT NULL DEFAULT 0"],
+   ["last_error", "TEXT"],
+   ["started_at", "TEXT"],
+   ["finished_at", "TEXT"],
+   ["post_note", "TEXT"]
+  ];
+  for (const [name, type] of wanted) {
+   if (!have.includes(name)) await db.prepare("ALTER TABLE sc_jobs ADD COLUMN " + name + " " + type).run();
+  }
+
+  // Las tareas viejas se guardaron con hora local (sin "Z"). Se convierten una
+  // sola vez a UTC (Argentina = UTC-3) para que no salgan a la hora equivocada.
+  const done = await db.prepare("SELECT v FROM sc_kv WHERE k='tz_migrated'").first();
+  if (!done) {
+   await db.prepare(
+    "UPDATE sc_jobs SET scheduled_at=strftime('%Y-%m-%dT%H:%M:00.000Z',datetime(replace(substr(scheduled_at,1,16),'T',' '),'+3 hours')) " +
+    "WHERE scheduled_at IS NOT NULL AND scheduled_at NOT LIKE '%Z' AND datetime(replace(substr(scheduled_at,1,16),'T',' ')) IS NOT NULL"
+   ).run();
+   await db.prepare("INSERT OR REPLACE INTO sc_kv (k,v) VALUES ('tz_migrated','1')").run();
+  }
+ })().catch(e => { schemaReady = null; throw e; });
+ return schemaReady;
+}
+
+async function promoteDue(env) {
+ const nowIso = new Date().toISOString();
+ const stale = new Date(Date.now() - 20 * 60000).toISOString();
+ // Una tarea "running" que lleva mas de 20 min quedo colgada: vuelve a la cola.
+ await env.DB.prepare("UPDATE sc_jobs SET status='ready' WHERE status='running' AND started_at<?").bind(stale).run();
+ const r = await env.DB.prepare("UPDATE sc_jobs SET status='ready' WHERE status='pending' AND scheduled_at<=?").bind(nowIso).run();
+ return r.meta?.changes || 0;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Gemini                                                             */
+/* ------------------------------------------------------------------ */
+
+async function rewriteText(content, env) {
+ const keys = (env.GEMINI_API_KEYS || env.GEMINI_API_KEY || "")
+  .split(",").map(x => x.trim()).filter(Boolean);
+ if (!keys.length) throw Error("Falta GEMINI_API_KEYS.");
+
+ const models = ["gemini-2.5-flash", "gemini-2.0-flash"];
+ let last = "No se pudo generar el texto.";
+
+ for (const key of keys) {
+  for (const model of models) {
+   try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 12000);
+    const r = await fetch(
+     "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent?key=" + encodeURIComponent(key),
      {
-      method:"POST",
-      signal:controller.signal,
-      headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({
-       contents:[{parts:[{text:
-        "Reescribí el siguiente texto para una publicación comercial de redes sociales. "+
-        "Conservá fielmente los datos, no inventes precios, promociones, productos ni hechos. "+
-        "Usá un tono atractivo, claro y natural. Respondé únicamente con el texto final.\\n\\n"+content
-       }]}],
-       generationConfig:{temperature:0.7}
+      method: "POST",
+      signal: controller.signal,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+       contents: [{ parts: [{ text:
+        "Reescribí el siguiente texto para una publicación comercial de redes sociales. " +
+        "Conservá fielmente los datos, no inventes precios, promociones, productos ni hechos. " +
+        "Usá un tono atractivo, claro y natural. Respondé únicamente con el texto final.\n\n" + content
+       }] }],
+       generationConfig: { temperature: 0.7 }
       })
      }
     );
     clearTimeout(timeout);
-    const data=await r.json();
-    if(!r.ok){last=data?.error?.message||"Error Gemini";continue}
-    const result=data?.candidates?.[0]?.content?.parts?.map(p=>p.text||"").join("").trim();
-    if(result)return result;
-   }catch(e){last=e.message}
+    const data = await r.json();
+    if (!r.ok) { last = data?.error?.message || "Error Gemini"; continue; }
+    const result = data?.candidates?.[0]?.content?.parts?.map(p => p.text || "").join("").trim();
+    if (result) return result;
+   } catch (e) { last = e.message; }
   }
  }
  throw Error(last);
 }
 
-async function handle(request,env){
- const url=new URL(request.url);
- const path=url.pathname;
- const method=request.method;
+/* ------------------------------------------------------------------ */
+/*  Rutas                                                              */
+/* ------------------------------------------------------------------ */
 
- if(method==="OPTIONS")return new Response(null,{headers:corsHeaders});
- if(path==="/"&&method==="GET")return html();
+const JOB_SELECT =
+ "SELECT j.id,j.campaign_id,c.content AS text,c.name AS campaign_name,d.name AS group_name,d.destination_url AS group_url " +
+ "FROM sc_jobs j JOIN sc_campaigns c ON c.id=j.campaign_id JOIN sc_destinations d ON d.id=j.destination_id ";
 
- if(path==="/api/status"&&method==="GET")
-  return json({ok:true,worker:"active",time:new Date().toISOString()});
+function idFrom(path) {
+ const id = Number(path.split("/").pop());
+ return Number.isInteger(id) && id > 0 ? id : 0;
+}
 
- if(!env.DB)return json({error:"No está configurada la vinculación D1 DB."},500);
- const auth=request.headers.get("X-Admin-Token")||"";
- if(!env.SOCIAL_ADMIN_TOKEN||auth!==env.SOCIAL_ADMIN_TOKEN)
-  return json({error:"Token incorrecto. Ingresá el token de administrador."},401);
+async function handle(request, env) {
+ const url = new URL(request.url);
+ const path = url.pathname;
+ const method = request.method;
 
- try{
-  if(path==="/api/rewrite"&&method==="POST"){
-   const body=await request.json();
-   const content=String(body.content||"").trim();
-   if(!content)return json({error:"Texto vacío."},400);
-   const result=await rewriteText(content,env);
-   return json({content:result});
+ if (method === "OPTIONS") return new Response(null, { status: 204, headers: SECURITY_HEADERS });
+ if (path === "/" && method === "GET") return html(env);
+ if (path === "/api/status" && method === "GET")
+  return json({ ok: true, worker: "active", time: new Date().toISOString() });
+
+ if (!env.DB) return json({ error: "No está configurada la vinculación D1 DB." }, 500);
+ const auth = request.headers.get("X-Admin-Token") || "";
+ if (!env.SOCIAL_ADMIN_TOKEN || !safeEq(auth, String(env.SOCIAL_ADMIN_TOKEN)))
+  return json({ error: "Acceso no autorizado." }, 401);
+
+ try {
+  await ensureSchema(env);
+  const nowIso = new Date().toISOString();
+
+  /* ---------- Gemini ---------- */
+  if (path === "/api/rewrite" && method === "POST") {
+   const body = await request.json();
+   const content = String(body.content || "").trim();
+   if (!content) return json({ error: "Texto vacío." }, 400);
+   return json({ content: await rewriteText(content, env) });
   }
 
-  if(path==="/api/destinations"&&method==="GET"){
-   const result=await env.DB.prepare(
-    "SELECT * FROM sc_destinations ORDER BY id DESC"
-   ).all();
-   return json({items:result.results||[]});
+  /* ---------- Destinos ---------- */
+  if (path === "/api/destinations" && method === "GET") {
+   const r = await env.DB.prepare("SELECT * FROM sc_destinations ORDER BY id DESC").all();
+   return json({ items: r.results || [] });
   }
 
-  if(path==="/api/destinations"&&method==="POST"){
-   const body=await request.json();
-   const name=String(body.name||"").trim();
-   const url=String(body.url||"").trim();
-   if(!name)return json({error:"El nombre es obligatorio."},400);
+  if (path === "/api/destinations" && method === "POST") {
+   const body = await request.json();
+   const name = String(body.name || "").trim();
+   const link = String(body.url || "").trim();
+   if (!name) return json({ error: "El nombre es obligatorio." }, 400);
+   if (link && !/^https:\/\/([a-z0-9-]+\.)?facebook\.com\//i.test(link))
+    return json({ error: "El enlace debe ser de un grupo de Facebook (https://www.facebook.com/groups/...)." }, 400);
    await env.DB.prepare(
     "INSERT INTO sc_destinations (name,platform,destination_type,destination_url,enabled) VALUES (?, 'facebook','group',?,1)"
-   ).bind(name,url||null).run();
-   return json({ok:true});
+   ).bind(name, link || null).run();
+   return json({ ok: true });
   }
 
-  if(path.startsWith("/api/destinations/")&&method==="DELETE"){
-   const id=Number(path.split("/").pop());
-   if(!Number.isInteger(id)||id<=0)return json({error:"ID inválido."},400);
-   const jobs=await env.DB.prepare(
-    "SELECT COUNT(*) AS n FROM sc_jobs WHERE destination_id=? AND status IN ('pending','ready')"
+  if (path.startsWith("/api/destinations/") && method === "DELETE") {
+   const id = idFrom(path);
+   if (!id) return json({ error: "ID inválido." }, 400);
+   const jobs = await env.DB.prepare(
+    "SELECT COUNT(*) AS n FROM sc_jobs WHERE destination_id=? AND status IN ('pending','ready','running')"
    ).bind(id).first();
-   if(jobs?.n)return json({error:"Este destino tiene tareas pendientes. Cancelalas primero."},400);
+   if (jobs?.n) return json({ error: "Este grupo tiene tareas pendientes. Cancelalas primero." }, 400);
    await env.DB.prepare("DELETE FROM sc_destinations WHERE id=?").bind(id).run();
-   return json({ok:true});
+   return json({ ok: true });
   }
 
-  if(path==="/api/campaigns"&&method==="GET"){
-   const result=await env.DB.prepare(
-    "SELECT * FROM sc_campaigns ORDER BY id DESC"
-   ).all();
-   return json({items:result.results||[]});
+  /* ---------- Campañas ---------- */
+  if (path === "/api/campaigns" && method === "GET") {
+   const r = await env.DB.prepare("SELECT id,name,content,status,start_date FROM sc_campaigns ORDER BY id DESC").all();
+   const m = await env.DB.prepare("SELECT id,campaign_id,thumb FROM sc_media ORDER BY id").all();
+   const byCamp = {};
+   for (const x of m.results || []) (byCamp[x.campaign_id] ||= []).push({ id: x.id, thumb: x.thumb });
+   const items = (r.results || []).map(c => ({ ...c, media: byCamp[c.id] || [] }));
+   return json({ items });
   }
 
-  if(path==="/api/campaigns"&&method==="POST"){
-   const body=await request.json();
-   const name=String(body.name||"").trim();
-   const content=String(body.content||"").trim();
-   const start=String(body.start_date||"").trim();
-   const end=body.end_date?String(body.end_date):null;
-   if(!name||!content||!start)return json({error:"Faltan datos de campaña."},400);
-   await env.DB.prepare(
+  if (path === "/api/campaigns" && method === "POST") {
+   const body = await request.json();
+   const name = String(body.name || "").trim();
+   const content = String(body.content || "").trim();
+   const start = String(body.start_date || nowIso).trim();
+   const end = body.end_date ? String(body.end_date) : null;
+   if (!name || !content) return json({ error: "Faltan el nombre o el texto de la campaña." }, 400);
+   const r = await env.DB.prepare(
     "INSERT INTO sc_campaigns (name,content,status,start_date,end_date) VALUES (?,?,'active',?,?)"
-   ).bind(name,content,start,end).run();
-   return json({ok:true});
+   ).bind(name, content, start, end).run();
+   return json({ ok: true, id: r.meta?.last_row_id });
   }
 
-  if(path.startsWith("/api/campaigns/")&&method==="DELETE"){
-   const id=Number(path.split("/").pop());
-   if(!Number.isInteger(id)||id<=0)return json({error:"ID inválido."},400);
-   const jobs=await env.DB.prepare(
-    "SELECT COUNT(*) AS n FROM sc_jobs WHERE campaign_id=? AND status IN ('pending','ready')"
+  if (path.startsWith("/api/campaigns/") && method === "DELETE") {
+   const id = idFrom(path);
+   if (!id) return json({ error: "ID inválido." }, 400);
+   const jobs = await env.DB.prepare(
+    "SELECT COUNT(*) AS n FROM sc_jobs WHERE campaign_id=? AND status IN ('pending','ready','running')"
    ).bind(id).first();
-   if(jobs?.n)return json({error:"Esta campaña tiene tareas pendientes. Cancelalas primero."},400);
-   await env.DB.prepare("DELETE FROM sc_campaigns WHERE id=?").bind(id).run();
-   return json({ok:true});
+   if (jobs?.n) return json({ error: "Esta campaña tiene tareas pendientes. Cancelalas primero." }, 400);
+   await env.DB.batch([
+    env.DB.prepare("DELETE FROM sc_media WHERE campaign_id=?").bind(id),
+    env.DB.prepare("DELETE FROM sc_jobs WHERE campaign_id=?").bind(id),
+    env.DB.prepare("DELETE FROM sc_campaigns WHERE id=?").bind(id)
+   ]);
+   return json({ ok: true });
   }
 
-  if(path==="/api/jobs"&&method==="GET"){
-   const result=await env.DB.prepare(
-    "SELECT j.*,c.name AS campaign_name,d.name AS destination_name FROM sc_jobs j LEFT JOIN sc_campaigns c ON c.id=j.campaign_id LEFT JOIN sc_destinations d ON d.id=j.destination_id ORDER BY j.scheduled_at DESC LIMIT 200"
+  /* ---------- Fotos ---------- */
+  if (path === "/api/media" && method === "POST") {
+   const body = await request.json();
+   const campaign = Number(body.campaign_id);
+   const mime = String(body.mime || "");
+   const data = String(body.data || "");
+   const thumb = String(body.thumb || "");
+   if (!campaign || !["image/jpeg", "image/png", "image/webp"].includes(mime))
+    return json({ error: "Foto no válida (usá JPG, PNG o WebP)." }, 400);
+   if (!data || data.length > MAX_B64_LENGTH || thumb.length > 60000)
+    return json({ error: "La foto es demasiado pesada." }, 400);
+   const c = await env.DB.prepare("SELECT id FROM sc_campaigns WHERE id=?").bind(campaign).first();
+   if (!c) return json({ error: "Campaña inexistente." }, 400);
+   const n = await env.DB.prepare("SELECT COUNT(*) AS n FROM sc_media WHERE campaign_id=?").bind(campaign).first();
+   if ((n?.n || 0) >= MAX_IMAGES_PER_CAMPAIGN)
+    return json({ error: "Máximo " + MAX_IMAGES_PER_CAMPAIGN + " fotos por campaña." }, 400);
+   const r = await env.DB.prepare(
+    "INSERT INTO sc_media (campaign_id,mime,data,thumb,size) VALUES (?,?,?,?,?)"
+   ).bind(campaign, mime, data, thumb || null, data.length).run();
+   return json({ ok: true, id: r.meta?.last_row_id });
+  }
+
+  if (path.startsWith("/api/media/") && path.endsWith("/raw") && method === "GET") {
+   const id = Number(path.split("/")[3]);
+   const m = await env.DB.prepare("SELECT mime,data FROM sc_media WHERE id=?").bind(id).first();
+   if (!m) return json({ error: "Foto inexistente." }, 404);
+   const bin = Uint8Array.from(atob(m.data), ch => ch.charCodeAt(0));
+   return new Response(bin, { headers: { ...SECURITY_HEADERS, "Content-Type": m.mime } });
+  }
+
+  if (path.startsWith("/api/media/") && method === "DELETE") {
+   const id = idFrom(path);
+   if (!id) return json({ error: "ID inválido." }, 400);
+   await env.DB.prepare("DELETE FROM sc_media WHERE id=?").bind(id).run();
+   return json({ ok: true });
+  }
+
+  /* ---------- Tareas ---------- */
+  if (path === "/api/jobs" && method === "GET") {
+   const r = await env.DB.prepare(
+    "SELECT j.id,j.campaign_id,j.destination_id,j.scheduled_at,j.status,j.attempts,j.last_error,j.finished_at,j.post_note," +
+    "c.name AS campaign_name,d.name AS destination_name FROM sc_jobs j " +
+    "LEFT JOIN sc_campaigns c ON c.id=j.campaign_id LEFT JOIN sc_destinations d ON d.id=j.destination_id " +
+    "ORDER BY j.scheduled_at DESC LIMIT 200"
    ).all();
-   return json({items:result.results||[]});
+   return json({ items: r.results || [] });
   }
 
-  if(path==="/api/jobs"&&method==="POST"){
-   const body=await request.json();
-   const campaign=Number(body.campaign_id);
-   const destination=Number(body.destination_id);
-   const date=String(body.scheduled_at||"").trim();
-   if(!campaign||!destination||!date)return json({error:"Faltan datos."},400);
-   const c=await env.DB.prepare("SELECT id FROM sc_campaigns WHERE id=?").bind(campaign).first();
-   const d=await env.DB.prepare("SELECT id,enabled FROM sc_destinations WHERE id=?").bind(destination).first();
-   if(!c||!d)return json({error:"Campaña o destino inexistente."},400);
-   if(!d.enabled)return json({error:"El destino está desactivado."},400);
+  if (path === "/api/jobs" && method === "POST") {
+   const body = await request.json();
+   const campaign = Number(body.campaign_id);
+   const ids = (Array.isArray(body.destination_ids) ? body.destination_ids : [body.destination_id])
+    .map(Number).filter(n => Number.isInteger(n) && n > 0);
+   let when = body.now ? nowIso : String(body.scheduled_at || "").trim();
+   if (!campaign || !ids.length || !when) return json({ error: "Faltan datos." }, 400);
+   if (isNaN(Date.parse(when))) return json({ error: "Fecha u hora no válida." }, 400);
+   when = new Date(when).toISOString();
+   const c = await env.DB.prepare("SELECT id FROM sc_campaigns WHERE id=?").bind(campaign).first();
+   if (!c) return json({ error: "Campaña inexistente." }, 400);
+   const stmts = [];
+   for (const id of ids) {
+    const d = await env.DB.prepare("SELECT id,enabled,destination_url FROM sc_destinations WHERE id=?").bind(id).first();
+    if (!d) return json({ error: "Grupo inexistente." }, 400);
+    if (!d.enabled) return json({ error: "Un grupo está desactivado." }, 400);
+    if (!d.destination_url) return json({ error: "Un grupo no tiene enlace; el worker no sabe a dónde entrar." }, 400);
+    stmts.push(env.DB.prepare(
+     "INSERT INTO sc_jobs (campaign_id,destination_id,scheduled_at,status) VALUES (?,?,?,'pending')"
+    ).bind(campaign, id, when));
+   }
+   await env.DB.batch(stmts);
+   if (body.now) await promoteDue(env);
+   return json({ ok: true, created: stmts.length });
+  }
+
+  if (path.startsWith("/api/jobs/") && path.endsWith("/run") && method === "POST") {
+   const id = Number(path.split("/")[3]);
    await env.DB.prepare(
-    "INSERT INTO sc_jobs (campaign_id,destination_id,scheduled_at,status) VALUES (?,?,?,'pending')"
-   ).bind(campaign,destination,date).run();
-   return json({ok:true});
+    "UPDATE sc_jobs SET status='ready',scheduled_at=?,last_error=NULL WHERE id=? AND status IN ('pending','ready','failed')"
+   ).bind(nowIso, id).run();
+   return json({ ok: true });
   }
 
-  if(path.startsWith("/api/jobs/")&&method==="DELETE"){
-   const id=Number(path.split("/").pop());
-   if(!Number.isInteger(id)||id<=0)return json({error:"ID inválido."},400);
+  if (path.startsWith("/api/jobs/") && method === "DELETE") {
+   const id = idFrom(path);
+   if (!id) return json({ error: "ID inválido." }, 400);
+   await env.DB.prepare("DELETE FROM sc_jobs WHERE id=? AND status<>'running'").bind(id).run();
+   return json({ ok: true });
+  }
+
+  if (path === "/api/cron" && method === "POST") {
+   return json({ ok: true, ready: await promoteDue(env) });
+  }
+
+  /* ---------- Worker de Windows ---------- */
+  if (path === "/api/worker/heartbeat" && method === "POST") {
+   const body = await request.json().catch(() => ({}));
+   const v = JSON.stringify({
+    at: nowIso,
+    host: String(body.host || "").slice(0, 60),
+    version: String(body.version || "").slice(0, 20),
+    state: String(body.state || "").slice(0, 80)
+   });
+   await env.DB.prepare("INSERT OR REPLACE INTO sc_kv (k,v) VALUES ('runner',?)").bind(v).run();
+   return json({ ok: true });
+  }
+
+  if (path === "/api/runner" && method === "GET") {
+   const row = await env.DB.prepare("SELECT v FROM sc_kv WHERE k='runner'").first();
+   let info = null;
+   try { info = row ? JSON.parse(row.v) : null; } catch (e) { info = null; }
+   const age = info ? Math.round((Date.now() - Date.parse(info.at)) / 1000) : null;
+   return json({ runner: info, age_seconds: age });
+  }
+
+  if (path === "/api/worker/claim" && method === "POST") {
+   const body = await request.json().catch(() => ({}));
+   await promoteDue(env);
+   let job;
+   if (body.peek) {
+    // Modo prueba: devuelve la próxima tarea sin reservarla ni cambiarle el estado.
+    job = await env.DB.prepare(
+     JOB_SELECT + "WHERE j.status IN ('pending','ready','failed') ORDER BY j.scheduled_at ASC, j.id ASC LIMIT 1"
+    ).first();
+   } else {
+    job = await env.DB.prepare(
+     JOB_SELECT + "WHERE j.status='ready' ORDER BY j.scheduled_at ASC, j.id ASC LIMIT 1"
+    ).first();
+   }
+   if (!job) return json({ job: null });
+   if (!body.peek) {
+    const r = await env.DB.prepare(
+     "UPDATE sc_jobs SET status='running',started_at=?,attempts=attempts+1 WHERE id=? AND status='ready'"
+    ).bind(nowIso, job.id).run();
+    if (!r.meta?.changes) return json({ job: null });
+   }
+   const media = await env.DB.prepare("SELECT id,mime FROM sc_media WHERE campaign_id=? ORDER BY id").bind(job.campaign_id).all();
+   return json({ job: { ...job, media: media.results || [] } });
+  }
+
+  if (path.startsWith("/api/worker/jobs/") && path.endsWith("/result") && method === "POST") {
+   const id = Number(path.split("/")[4]);
+   const body = await request.json().catch(() => ({}));
+   if (!Number.isInteger(id) || id <= 0) return json({ error: "ID inválido." }, 400);
+   const ok = !!body.ok;
    await env.DB.prepare(
-    "DELETE FROM sc_jobs WHERE id=? AND status IN ('pending','ready')"
-   ).bind(id).run();
-   return json({ok:true});
-  }
-
-  if(path==="/api/cron"&&method==="POST"){
-   const result=await env.DB.prepare(
-    "UPDATE sc_jobs SET status='ready' WHERE status='pending' AND scheduled_at<=datetime('now')"
+    "UPDATE sc_jobs SET status=?,last_error=?,post_note=?,finished_at=? WHERE id=?"
+   ).bind(
+    ok ? "done" : "failed",
+    ok ? null : String(body.error || "Error desconocido").slice(0, 500),
+    body.note ? String(body.note).slice(0, 300) : null,
+    nowIso, id
    ).run();
-   return json({ok:true,ready:result.meta?.changes||0,note:"Las tareas están marcadas como ready; todavía requieren un ejecutor de publicación."});
+   return json({ ok: true });
   }
 
-  return json({error:"Ruta no encontrada."},404);
- }catch(e){
-  return json({error:e.message||"Error interno"},500);
+  return json({ error: "Ruta no encontrada." }, 404);
+ } catch (e) {
+  return json({ error: e.message || "Error interno" }, 500);
  }
 }
 
 export default {
- async fetch(request,env,ctx){
-  return handle(request,env);
+ async fetch(request, env) {
+  return handle(request, env);
  },
- async scheduled(event,env,ctx){
-  if(!env.DB)return;
-  ctx.waitUntil(
-   env.DB.prepare(
-    "UPDATE sc_jobs SET status='ready' WHERE status='pending' AND scheduled_at<=datetime('now')"
-   ).run()
-  );
+ async scheduled(event, env, ctx) {
+  if (!env.DB) return;
+  ctx.waitUntil(ensureSchema(env).then(() => promoteDue(env)));
  }
 };

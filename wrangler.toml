@@ -8,7 +8,7 @@ GEMINI_MODEL = "gemini-2.5-flash"
 [[d1_databases]]
 binding = "DB"
 database_name = "social-campaign-db"
-database_id = "REPLACE_WITH_D1_DATABASE_ID"
+database_id = "5d3e6b8b-a768-4bce-8fdf-002033bad668"
 
 [triggers]
 crons = ["*/5 * * * *"]

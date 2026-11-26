@@ -566,7 +566,7 @@ window.addEventListener("message",function(e){
 });
 
 var ACT={
- capStart(){ext("captureStart")},
+ capStart(){ext("captureStart");toast("Activando... mirá el estado arriba, en Extensión")},
  capStop(){ext("captureStop")},
  prevMonth(){C.month.setMonth(C.month.getMonth()-1);C.day="";return loadCal()},
  nextMonth(){C.month.setMonth(C.month.getMonth()+1);C.day="";return loadCal()},

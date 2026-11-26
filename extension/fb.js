@@ -98,7 +98,7 @@
       b.style.cssText = 'position:fixed;left:10px;bottom:10px;z-index:2147483647;max-width:360px;padding:10px 14px;border-radius:8px;background:#12203a;color:#fff;font:14px/1.4 Arial,sans-serif;pointer-events:none';
       document.documentElement.appendChild(b);
     }
-    b.textContent = 'Social Campaign 1.7.0: ' + text;
+    b.textContent = 'Social Campaign 1.8.0: ' + text;
   }
   function step(text) { banner(text); try { chrome.runtime.sendMessage({ type: 'step', text: text }); } catch (e) {} }
 

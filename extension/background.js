@@ -1,6 +1,6 @@
 // Cada minuto pregunta al panel si hay una tarea lista y la publica en el grupo de Facebook
 // usando tu propia sesion de Chrome. Pausa entre grupos y tope diario incluidos.
-var VERSION = '1.7.0';
+var VERSION = '1.8.0';
 var busy = false;
 
 function get(k) { return chrome.storage.local.get(k); }
@@ -236,7 +236,7 @@ async function fromPanel(msg, origin) {
   cfg.adminToken = msg.token;
   await set({ cfg: cfg });
   await beat(cfg, 'Conectado');
-  if (msg.action === 'captureStart') { await set({ capture: true, captured: [] }); return 'Capturador activado. Entrá a tus grupos en Facebook.'; }
+  if (msg.action === 'captureStart') { await set({ capture: true, captured: [], captureError: '' }); await injectCapture(); return 'Capturador activado. Entrá a tus grupos en Facebook.'; }
   if (msg.action === 'captureStop') { await set({ capture: false }); return 'Capturador detenido.'; }
   if (msg.action !== 'run') return 'Conectada (versión ' + VERSION + ').';
   if (!cfg.enabled) return 'La extensión está desactivada: marcá "Worker activo" en su ventanita.';
@@ -254,6 +254,19 @@ async function fromPanel(msg, origin) {
   return 'Orden recibida. Abriendo el grupo...';
 }
 
+// Mete el capturador en las pestañas de Facebook ya abiertas (no hace falta F5).
+function injectInto(tabId) {
+  return chrome.scripting.executeScript({ target: { tabId: tabId }, files: ['capture.js'] }).catch(function () {});
+}
+async function injectCapture() {
+  var tabs = await chrome.tabs.query({ url: 'https://*.facebook.com/*' });
+  for (var i = 0; i < tabs.length; i++) await injectInto(tabs[i].id);
+}
+chrome.tabs.onUpdated.addListener(async function (tabId, change, tab) {
+  if (!(change.url || change.status === 'complete') || !/^https:\/\/[^\/]*facebook\.com\//.test(tab.url || '')) return;
+  if ((await get('capture')).capture) injectInto(tabId);
+});
+
 // De a uno, para no pisar la lista ni duplicar grupos.
 var saving = Promise.resolve();
 async function saveGroup(msg) {
@@ -268,13 +281,13 @@ async function saveGroup(msg) {
   });
   if (!exists) await apiJson(cfg, '/api/destinations', 'POST', { name: msg.name.slice(0, 120), url: 'https://www.facebook.com/groups/' + msg.slug });
   list.unshift({ slug: msg.slug, name: msg.name, old: exists });
-  await set({ captured: list });
+  await set({ captured: list, captureError: '' });
 }
 
 chrome.runtime.onMessage.addListener(function (msg, sender, send) {
   if (msg && msg.type === 'alive') return;
   if (msg && msg.type === 'group') {
-    saving = saving.then(function () { return saveGroup(msg); }).catch(function (e) { return addLog('Capturador: ' + e.message); });
+    saving = saving.then(function () { return saveGroup(msg); }).catch(function (e) { return set({ captureError: e.message }); });
     return;
   }
   if (msg && msg.type === 'clicked') {

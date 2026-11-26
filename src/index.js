@@ -100,14 +100,14 @@ async function rewriteText(content, env) {
   .split(",").map(x => x.trim()).filter(Boolean);
  if (!keys.length) throw Error("Falta GEMINI_API_KEYS.");
 
- const models = ["gemini-2.5-flash", "gemini-2.0-flash"];
+ const models = [...new Set([env.GEMINI_MODEL, "gemini-3.6-flash", "gemini-3.8-flash", "gemini-3.5-flash-lite"].filter(Boolean))];
  let last = "No se pudo generar el texto.";
 
  for (const key of keys) {
   for (const model of models) {
    try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 12000);
+    const timeout = setTimeout(() => controller.abort(), 25000);
     const r = await fetch(
      "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent?key=" + encodeURIComponent(key),
      {
@@ -119,8 +119,7 @@ async function rewriteText(content, env) {
         "Reescribí el siguiente texto para una publicación comercial de redes sociales. " +
         "Conservá fielmente los datos, no inventes precios, promociones, productos ni hechos. " +
         "Usá un tono atractivo, claro y natural. Respondé únicamente con el texto final.\n\n" + content
-       }] }],
-       generationConfig: { temperature: 0.7 }
+       }] }]
       })
      }
     );
@@ -205,6 +204,14 @@ async function handle(request, env) {
    return json({ ok: true });
   }
 
+  if (path.startsWith("/api/destinations/") && method === "PATCH") {
+   const id = idFrom(path);
+   const body = await request.json();
+   if (!id) return json({ error: "ID inválido." }, 400);
+   await env.DB.prepare("UPDATE sc_destinations SET enabled=? WHERE id=?").bind(body.enabled ? 1 : 0, id).run();
+   return json({ ok: true });
+  }
+
   /* ---------- Campañas ---------- */
   if (path === "/api/campaigns" && method === "GET") {
    const r = await env.DB.prepare("SELECT id,name,content,status,start_date FROM sc_campaigns ORDER BY id DESC").all();
@@ -281,6 +288,11 @@ async function handle(request, env) {
   }
 
   /* ---------- Tareas ---------- */
+  if (path === "/api/jobs/pending" && method === "DELETE") {
+   await env.DB.prepare("DELETE FROM sc_jobs WHERE status IN ('pending','ready')").run();
+   return json({ ok: true });
+  }
+
   if (path === "/api/jobs" && method === "GET") {
    const r = await env.DB.prepare(
     "SELECT j.id,j.campaign_id,j.destination_id,j.scheduled_at,j.status,j.attempts,j.last_error,j.finished_at,j.post_note," +
@@ -302,15 +314,19 @@ async function handle(request, env) {
    when = new Date(when).toISOString();
    const c = await env.DB.prepare("SELECT id FROM sc_campaigns WHERE id=?").bind(campaign).first();
    if (!c) return json({ error: "Campaña inexistente." }, 400);
+   const all = await env.DB.prepare("SELECT id,enabled,destination_url FROM sc_destinations").all();
+   const byId = new Map((all.results || []).map(d => [d.id, d]));
+   const gap = Math.min(1440, Math.max(0, Number(body.interval_minutes) || 0)) * 60000;
    const stmts = [];
    for (const id of ids) {
-    const d = await env.DB.prepare("SELECT id,enabled,destination_url FROM sc_destinations WHERE id=?").bind(id).first();
+    const d = byId.get(id);
     if (!d) return json({ error: "Grupo inexistente." }, 400);
     if (!d.enabled) return json({ error: "Un grupo está desactivado." }, 400);
     if (!d.destination_url) return json({ error: "Un grupo no tiene enlace; el worker no sabe a dónde entrar." }, 400);
+    const at = new Date(Date.parse(when) + gap * stmts.length).toISOString();
     stmts.push(env.DB.prepare(
      "INSERT INTO sc_jobs (campaign_id,destination_id,scheduled_at,status) VALUES (?,?,?,'pending')"
-    ).bind(campaign, id, when));
+    ).bind(campaign, id, at));
    }
    await env.DB.batch(stmts);
    if (body.now) await promoteDue(env);

@@ -1,6 +1,6 @@
 // Cada minuto pregunta al panel si hay una tarea lista y la publica en el grupo de Facebook
 // usando tu propia sesion de Chrome. Pausa entre grupos y tope diario incluidos.
-var VERSION = '1.0.0';
+var VERSION = '1.1.0';
 var busy = false;
 
 function get(k) { return chrome.storage.local.get(k); }
@@ -72,7 +72,7 @@ async function publish(cfg, job, dry) {
   if (!/(^|\.)facebook\.com$/i.test(u.hostname)) throw new Error('El enlace del grupo no es de Facebook.');
   u.hostname = 'www.facebook.com';
   var images = await loadImages(cfg, job);
-  var win = await chrome.windows.create({ url: u.toString(), type: 'normal', focused: !!dry, width: 1000, height: 760, left: 40, top: 40 });
+  var win = await chrome.windows.create({ url: u.toString(), type: 'normal', focused: true, width: 1000, height: 760, left: 40, top: 40 });
   var tabId = win.tabs[0].id;
   try {
     await waitComplete(tabId, 60000);
@@ -165,7 +165,27 @@ chrome.alarms.create('tick', { periodInMinutes: 1 });
 chrome.alarms.onAlarm.addListener(function (a) { if (a.name === 'tick') tick(false); });
 chrome.runtime.onInstalled.addListener(function () { chrome.alarms.create('tick', { periodInMinutes: 1 }); tick(false); });
 chrome.runtime.onStartup.addListener(function () { tick(false); });
+// Se ejecuta en el contexto de la pagina, sobre el campo que tiene el foco.
+function writeInPage(method, text) {
+  var el = document.activeElement;
+  if (!el || !el.isContentEditable) return;
+  document.execCommand('selectAll', false, null);
+  if (method === 'paste') {
+    var dt = new DataTransfer();
+    dt.setData('text/plain', text);
+    el.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
+  } else {
+    document.execCommand('insertText', false, text);
+  }
+}
+
 chrome.runtime.onMessage.addListener(function (msg, sender, send) {
+  if (msg && msg.type === 'write' && sender.tab) {
+    chrome.scripting.executeScript({ target: { tabId: sender.tab.id }, world: 'MAIN', func: writeInPage, args: [msg.method, msg.text] })
+      .then(function () { send({ ok: true }); }, function () { send({ ok: false }); });
+    return true;
+  }
+  if (msg && msg.type === 'step') { status(msg.text); getCfg().then(function (cfg) { beat(cfg, msg.text); }); return; }
   if (msg && msg.type === 'tick') { set({ st: {} }).then(function () { return tick(false); }).then(function () { send({ ok: true }); }); return true; }
   if (msg && msg.type === 'dry') { tick(true).then(function () { send({ ok: true }); }); return true; }
 });

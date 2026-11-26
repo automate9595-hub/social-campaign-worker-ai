@@ -61,7 +61,7 @@ h1{margin:0 0 4px;font-size:26px;letter-spacing:-.02em}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:18px;margin-bottom:16px}
 .card h2{margin:0 0 12px;font-size:16px}
 label.f{display:block;font-size:13px;font-weight:600;color:var(--muted);margin:12px 0 5px}
-input[type=text],input[type=url],input[type=date],input[type=time],textarea,select{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--soft)}
+input[type=text],input[type=url],input[type=date],input[type=time],input[type=number],textarea,select{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--soft)}
 input:focus,textarea:focus,select:focus{border-color:var(--accent);outline:none;box-shadow:0 0 0 3px var(--accent-soft)}
 textarea{min-height:130px;resize:vertical}
 .row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
@@ -160,6 +160,12 @@ section[hidden]{display:none}
     <input type="url" id="destUrl" placeholder="https://www.facebook.com/groups/...">
     <div class="actions"><button class="btn" data-act="addDest">Guardar grupo</button></div>
    </div>
+   <div class="card">
+    <h2>Agregar muchos a la vez</h2>
+    <label class="f" for="bulk">Un grupo por línea: Nombre | enlace</label>
+    <textarea id="bulk" placeholder="Ventas Zona Norte | https://www.facebook.com/groups/123"></textarea>
+    <div class="actions"><button class="btn ghost" data-act="addBulk">Importar lista</button></div>
+   </div>
    <div class="list" id="destinations"></div>
   </section>
 
@@ -189,7 +195,21 @@ section[hidden]{display:none}
     <h2>Nueva publicación</h2>
     <label class="f" for="jobCampaign">Campaña</label>
     <select id="jobCampaign"></select>
-    <label class="f">Grupos <button class="btn ghost sm" data-act="allGroups" style="margin-left:6px">Marcar todos</button></label>
+    <label class="f" for="fLetter">Empiezan con (una o varias letras: A, V)</label>
+    <input type="text" id="fLetter" placeholder="Todas">
+    <div class="row">
+     <div><label class="f" for="fText">El nombre contiene</label><input type="text" id="fText"></div>
+     <div><label class="f" for="fHist">Historial</label><select id="fHist"><option value="">Todos</option><option value="never">Nunca publicados</option><option value="notoday">Sin publicación hoy</option></select></div>
+    </div>
+    <div class="actions">
+     <button class="btn ghost sm" data-act="selFiltered">Marcar los filtrados</button>
+     <button class="btn ghost sm" data-act="selRandom">Marcar al azar</button>
+     <input type="number" id="fCount" min="1" value="5" aria-label="Cantidad al azar" style="width:70px">
+     <button class="btn ghost sm" data-act="allGroups">Todos</button>
+     <button class="btn ghost sm" data-act="selNone">Ninguno</button>
+     <button class="btn ghost sm" data-act="selInvert">Invertir</button>
+    </div>
+    <label class="f" id="selInfo">Grupos</label>
     <div class="pick" id="jobGroups"></div>
     <label class="f">Cuándo</label>
     <div class="seg"><button data-when="now" aria-pressed="true">Ahora</button><button data-when="later" aria-pressed="false">Elegir fecha y hora</button></div>
@@ -197,9 +217,12 @@ section[hidden]{display:none}
      <div><label class="f" for="jobDate">Fecha</label><input type="date" id="jobDate"></div>
      <div><label class="f" for="jobTime">Hora</label><input type="time" id="jobTime"></div>
     </div>
+    <label class="f" for="fGap">Minutos entre un grupo y otro</label>
+    <input type="number" id="fGap" min="0" value="5" style="width:100px">
     <div class="actions"><button class="btn" data-act="schedule">Programar</button></div>
    </div>
    <h2 style="font-size:16px;margin:22px 0 10px">En cola</h2>
+   <div class="actions" style="margin:0 0 10px"><button class="btn del sm" data-act="clearQueue">Cancelar toda la cola</button></div>
    <div class="list" id="queue"></div>
   </section>
 
@@ -259,7 +282,7 @@ function renderAll(){
 
  $("destinations").innerHTML=S.dest.map(function(x){
   return '<div class="item"><div class="t"><b>'+esc(x.name)+'</b><small>'+esc(x.destination_url||"Sin enlace: agregalo para poder publicar")+'</small></div>'+
-   '<div class="b"><button class="btn del sm" data-act="delDest" data-id="'+x.id+'">Eliminar</button></div></div>';
+   '<div class="b"><button class="btn ghost sm" data-act="toggleDest" data-id="'+x.id+'">'+(x.enabled?"Desactivar":"Activar")+'</button><button class="btn del sm" data-act="delDest" data-id="'+x.id+'">Eliminar</button></div></div>';
  }).join("")||'<div class="empty">Todavía no agregaste grupos.</div>';
 
  $("campaigns").innerHTML=S.camp.map(function(x){
@@ -278,14 +301,44 @@ function renderAll(){
  var checked={};
  var cbs=document.querySelectorAll("#jobGroups input:checked");
  for(var i=0;i<cbs.length;i++)checked[cbs[i].value]=1;
- $("jobGroups").innerHTML=S.dest.map(function(x){
+ $("jobGroups").innerHTML=active().map(function(x){
   return '<label><input type="checkbox" value="'+x.id+'"'+(checked[x.id]?" checked":"")+'>'+esc(x.name)+'</label>';
  }).join("")||'<div class="empty" style="grid-column:1/-1">Primero agregá grupos.</div>';
+ applyFilter();
 
  $("queue").innerHTML=queue.map(jobHtml).join("")||'<div class="empty">No hay publicaciones en cola.</div>';
  var hist=S.jobs.filter(function(j){return j.status==="done"||j.status==="failed"});
  $("history").innerHTML=hist.map(jobHtml).join("")||'<div class="empty">Todavía no hay actividad.</div>';
 }
+function active(){
+ return S.dest.filter(function(x){return x.enabled}).sort(function(a,b){return a.name.localeCompare(b.name,"es")});
+}
+/* ---------- Selección de grupos ---------- */
+function norm(s){return String(s||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase()}
+function matches(x){
+ var letters=norm($("fLetter").value).split(/[\s,;]+/).filter(Boolean);
+ var name=norm(x.name).replace(/^[^a-z0-9]+/,""),text=norm($("fText").value).trim(),h=$("fHist").value;
+ if(letters.length&&!letters.some(function(l){return name.indexOf(l)===0}))return false;
+ if(text&&norm(x.name).indexOf(text)<0)return false;
+ var today=new Date().toDateString();
+ if(h&&S.jobs.some(function(j){
+  if(j.destination_id!==x.id||j.status==="failed")return false;
+  if(h==="never")return j.status==="done";
+  return new Date(j.finished_at||j.scheduled_at).toDateString()===today;
+ }))return false;
+ return true;
+}
+function boxes(){return Array.prototype.slice.call(document.querySelectorAll("#jobGroups input"))}
+function visibleBoxes(){return boxes().filter(function(c){return !c.parentNode.hidden})}
+function count(){
+ $("selInfo").textContent="Grupos: "+boxes().filter(function(c){return c.checked}).length+" marcados, "+visibleBoxes().length+" a la vista";
+}
+function applyFilter(){
+ var map={};S.dest.forEach(function(x){map[x.id]=x});
+ boxes().forEach(function(c){var ok=matches(map[c.value]);c.parentNode.hidden=!ok;c.parentNode.style.display=ok?"":"none"});
+ count();
+}
+function mark(fn){boxes().forEach(function(c){c.checked=fn(c)});count()}
 function jobHtml(j){
  var run=(j.status==="pending"||j.status==="ready"||j.status==="failed");
  return '<div class="item"><div class="t"><b>'+esc(j.campaign_name||"Campaña")+' <span class="badge '+esc(j.status)+'">'+(LABEL[j.status]||esc(j.status))+'</span></b>'+
@@ -369,17 +422,40 @@ var ACT={
   var r=await api("/api/rewrite","POST",{content:c});
   $("campContent").value=r.content;toast("Texto mejorado");
  },
- allGroups(){
-  var cbs=document.querySelectorAll("#jobGroups input"),all=true,i;
-  for(i=0;i<cbs.length;i++)if(!cbs[i].checked)all=false;
-  for(i=0;i<cbs.length;i++)cbs[i].checked=!all;
+ allGroups(){$("fLetter").value="";$("fText").value="";$("fHist").value="";applyFilter();mark(function(){return true})},
+ selNone(){mark(function(){return false})},
+ selInvert(){var v=visibleBoxes();mark(function(c){return v.indexOf(c)>=0&&!c.checked})},
+ selFiltered(){var v=visibleBoxes();mark(function(c){return v.indexOf(c)>=0});if(!v.length)toast("Ningún grupo coincide",true)},
+ selRandom(){
+  var v=visibleBoxes(),n=Math.max(1,Number($("fCount").value)||1);
+  for(var i=v.length-1;i>0;i--){var j=Math.floor(Math.random()*(i+1)),t=v[i];v[i]=v[j];v[j]=t}
+  var pick=v.slice(0,n);
+  mark(function(c){return pick.indexOf(c)>=0});
+  toast(pick.length+" grupos elegidos al azar");
  },
+ async addBulk(){
+  var lines=$("bulk").value.split(/\n/),bad=[],ok=0;
+  for(var i=0;i<lines.length;i++){
+   var line=lines[i].trim();if(!line)continue;
+   var m=line.match(/^(.+?)\s*[|;\t]\s*(https:\/\/\S+)$/);
+   if(!m){bad.push(line);continue}
+   try{await api("/api/destinations","POST",{name:m[1],url:m[2]});ok++}catch(e){bad.push(line)}
+  }
+  $("bulk").value=bad.join("\n");await refresh(true);
+  toast(ok+" grupos importados"+(bad.length?", "+bad.length+" con error (quedaron en el cuadro)":""),bad.length>0);
+ },
+ async toggleDest(el){
+  var x=S.dest.filter(function(d){return d.id===Number(el.dataset.id)})[0];
+  await api("/api/destinations/"+x.id,"PATCH",{enabled:!x.enabled});await refresh(true);
+  toast(x.enabled?"Grupo desactivado":"Grupo activado");
+ },
+ async clearQueue(){if(!confirm("¿Cancelar todas las publicaciones en cola?"))return;await api("/api/jobs/pending","DELETE");await refresh(true);toast("Cola vaciada")},
  async schedule(){
   var camp=Number($("jobCampaign").value),ids=[],cbs=document.querySelectorAll("#jobGroups input:checked");
   for(var i=0;i<cbs.length;i++)ids.push(Number(cbs[i].value));
   if(!camp)return toast("Elegí una campaña",true);
   if(!ids.length)return toast("Marcá al menos un grupo",true);
-  var body={campaign_id:camp,destination_ids:ids};
+  var body={campaign_id:camp,destination_ids:ids,interval_minutes:Number($("fGap").value)||0};
   if(S.when==="now")body.now=true;
   else{
    var d=$("jobDate").value,t=$("jobTime").value;
@@ -415,8 +491,11 @@ document.addEventListener("click",async function(ev){
  if(!el||!ACT[el.dataset.act])return;
  try{await ACT[el.dataset.act](el)}catch(e){fail(e)}
 });
+document.addEventListener("input",function(ev){if(ev.target.id==="fLetter"||ev.target.id==="fText")applyFilter()});
 document.addEventListener("change",async function(ev){
  var t=ev.target;
+ if(t.id==="fHist")return applyFilter();
+ if(t.closest("#jobGroups"))return count();
  try{
   if(t.id==="campFiles"){
    var room=6-S.pending.length,files=Array.prototype.slice.call(t.files,0,Math.max(room,0));

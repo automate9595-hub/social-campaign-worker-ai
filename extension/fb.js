@@ -59,21 +59,6 @@
     });
   }
 
-  function typeText(box, text) {
-    box.focus();
-    var lines = String(text).split(/\r?\n/);
-    for (var i = 0; i < lines.length; i++) {
-      if (lines[i]) document.execCommand('insertText', false, lines[i]);
-      if (i < lines.length - 1) document.execCommand('insertParagraph', false, null);
-    }
-    if (!(box.innerText || '').trim()) {
-      // plan B: simular un pegado de texto
-      var dt = new DataTransfer();
-      dt.setData('text/plain', text);
-      box.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
-    }
-  }
-
   function setFiles(input, files) {
     var dt = new DataTransfer();
     files.forEach(function (f) { dt.items.add(f); });
@@ -89,6 +74,36 @@
       if (!acc || /image/i.test(acc)) return list[i];
     }
     return null;
+  }
+
+  // Busca siempre el cuadro vigente: Facebook puede reemplazarlo mientras carga.
+  function composer() {
+    var d = all(document, '[role="dialog"]').filter(visible);
+    for (var i = d.length - 1; i >= 0; i--) {
+      var b = all(d[i], '[role="textbox"][contenteditable="true"]').filter(visible)[0];
+      if (b) return { dialog: d[i], box: b };
+    }
+    return null;
+  }
+  function norm(s) { return String(s || '').replace(/\s+/g, ''); }
+  function hasText(text) {
+    var c = composer();
+    return !!c && norm(c.box.innerText).indexOf(norm(text).slice(0, 15)) >= 0;
+  }
+  function step(text) { try { chrome.runtime.sendMessage({ type: 'step', text: text }); } catch (e) {} }
+
+  async function writeText(text) {
+    var methods = ['paste', 'insert'];
+    for (var i = 0; i < methods.length; i++) {
+      var c = composer();
+      if (!c) break;
+      click(c.box);
+      c.box.focus();
+      await sleep(500);
+      await chrome.runtime.sendMessage({ type: 'write', method: methods[i], text: text });
+      if (await waitFor(function () { return hasText(text); }, 4000)) return;
+    }
+    fail('No se pudo escribir la descripcion en el cuadro de Facebook.');
   }
 
   async function attach(dialog, box, files) {
@@ -127,19 +142,26 @@
       return null;
     }, 25000);
     if (!opener) fail("No se encontro el cuadro 'Escribe algo...'. El grupo puede no permitir publicar o Facebook cambio su diseno.");
+    step('Abriendo el cuadro de publicacion');
     click(opener);
 
-    var dialog = await waitFor(lastDialog, 20000);
-    if (!dialog) fail('No se abrio el cuadro de nueva publicacion.');
-    await sleep(1200);
-
-    var box = await waitFor(function () { return dialog.querySelector('[role="textbox"][contenteditable="true"]'); }, 10000);
-    if (!box) fail('No se encontro el campo de texto.');
-    typeText(box, msg.text);
+    var c = await waitFor(composer, 30000);
+    if (!c) fail('Se abrio Facebook pero no se encontro el campo de texto.');
+    await sleep(1500);
+    step('Escribiendo la descripcion');
+    await writeText(msg.text);
     await sleep(800);
 
     var files = toFiles(msg.images || []);
-    if (files.length) await attach(dialog, box, files);
+    c = composer();
+    if (!c) fail('El cuadro de publicacion se cerro.');
+    if (files.length) {
+      step('Cargando fotos');
+      await attach(c.dialog, c.box, files);
+    }
+    c = composer();
+    if (!c || !hasText(msg.text)) fail('La descripcion se borro antes de publicar; no se publico.');
+    var dialog = c.dialog;
 
     if (msg.dry) return { ok: true, dry: true, note: 'Prueba lista: texto y fotos cargados, sin publicar.' };
 
@@ -148,7 +170,9 @@
       return b && visible(b) ? b : null;
     }, 15000);
     if (!post) fail('No se encontro el boton Publicar.');
-    await waitFor(function () { return post.getAttribute('aria-disabled') !== 'true'; }, 20000);
+    var ready = await waitFor(function () { return post.getAttribute('aria-disabled') !== 'true'; }, 20000);
+    if (!ready) fail('El boton Publicar quedo desactivado.');
+    step('Publicando');
     click(post);
 
     var closed = await waitFor(function () { return !document.contains(dialog) || !visible(dialog); }, 120000);

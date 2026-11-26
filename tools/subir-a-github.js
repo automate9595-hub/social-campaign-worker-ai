@@ -11,7 +11,9 @@ var cp = require('child_process');
 
 var ROOT = path.resolve(__dirname, '..');
 var WW = path.join(ROOT, 'tools');
-var DATA = path.join(WW, 'data');
+// Los datos se guardan en tu usuario de Windows para que sirvan con cualquier zip nuevo.
+var HOME = process.env.USERPROFILE || process.env.HOME || ROOT;
+var DATA = path.join(HOME, '.social-campaign');
 var CONFIG = path.join(DATA, 'config.json');
 var TOKEN_FILE = path.join(DATA, 'github.json');
 var API = process.env.SC_GH_API || 'https://api.github.com';
@@ -20,7 +22,7 @@ var SKIP = { '.git': 1, 'node_modules': 1, 'data': 1 };
 
 function mkdir(p) { if (!fs.existsSync(p)) fs.mkdirSync(p); }
 function readJson(f) { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch (e) { return {}; } }
-function writeJson(f, o) { mkdir(WW); mkdir(DATA); fs.writeFileSync(f, JSON.stringify(o, null, 2)); }
+function writeJson(f, o) { mkdir(DATA); fs.writeFileSync(f, JSON.stringify(o, null, 2)); }
 function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
 function say(s) { console.log(s); }
 
@@ -130,7 +132,35 @@ function getToken(clientId) {
   });
 }
 
+// Recupera la conexion guardada por una version anterior (tools/data en otra carpeta).
+function importOld() {
+  if (fs.existsSync(TOKEN_FILE) && fs.existsSync(CONFIG)) return;
+  var found = [];
+  function look(dir, depth) {
+    var d = path.join(dir, 'tools', 'data');
+    if (fs.existsSync(path.join(d, 'config.json'))) found.push(d);
+    if (depth <= 0) return;
+    var names = [];
+    try { names = fs.readdirSync(dir); } catch (e) {}
+    names.forEach(function (n) {
+      if (depth < 3 && !/social|campaign/i.test(n)) return;
+      try { if (fs.statSync(path.join(dir, n)).isDirectory()) look(path.join(dir, n), depth - 1); } catch (e) {}
+    });
+  }
+  [path.dirname(ROOT), path.dirname(path.dirname(ROOT)), path.join(HOME, 'Downloads'), path.join(HOME, 'Desktop'), path.join(HOME, 'Documents')]
+    .forEach(function (dir) { look(dir, 3); });
+  function age(d) { return fs.statSync(path.join(d, 'config.json')).mtime.getTime(); }
+  found.sort(function (a, b) { return age(b) - age(a); });
+  found.forEach(function (d) {
+    [['config.json', CONFIG], ['github.json', TOKEN_FILE]].forEach(function (p) {
+      var o = readJson(path.join(d, p[0]));
+      if (!fs.existsSync(p[1]) && Object.keys(o).length) writeJson(p[1], o);
+    });
+  });
+}
+
 function main() {
+  importOld();
   var cfg = readJson(CONFIG);
   var needClient = !cfg.githubClientId;
   if (needClient) {
@@ -140,21 +170,18 @@ function main() {
     say('  3) Despues de crearla, tilda "Enable Device Flow" y guarda');
     say('  4) Copia el "Client ID" y pegalo aca abajo\n');
   }
-  return ask('Tu repositorio de GitHub (usuario/nombre-del-repo)', cfg.githubRepo || '').then(function (repo) {
-    cfg.githubRepo = repo;
-    return ask('Client ID de tu OAuth App', cfg.githubClientId || '');
+  say('\nATENCION: esto reemplaza el contenido del repositorio que escribas.');
+  return ask('Nombre del repositorio (usuario/repositorio)', cfg.githubRepo || '').then(function (repo) {
+    cfg.githubRepo = repo.replace(/^https:\/\/github\.com\//i, '').replace(/(\.git)?\/*$/, '');
+    return cfg.githubClientId || ask('Client ID de tu OAuth App', '');
   }).then(function (cid) {
     cfg.githubClientId = cid;
     if (!cfg.githubRepo || !cfg.githubClientId) throw new Error('Faltan datos.');
     writeJson(CONFIG, cfg);
     var files = walk(ROOT, '');
     if (files.indexOf('src/index.js') < 0) throw new Error('No encuentro src/index.js: abri este archivo desde la carpeta descomprimida del proyecto.');
-    say('\nSe van a subir ' + files.length + ' archivos a https://github.com/' + cfg.githubRepo);
-    say('Esto REEMPLAZA todo el contenido actual del repositorio (el historial anterior queda guardado en GitHub).');
-    return ask('Escribi SI para continuar', '').then(function (yes) {
-      if (yes.toUpperCase() !== 'SI') { say('Cancelado. No se cambio nada.'); return; }
-      return push(cfg, files);
-    });
+    say('\nSubiendo ' + files.length + ' archivos a https://github.com/' + cfg.githubRepo);
+    return push(cfg, files);
   });
 }
 
@@ -194,7 +221,7 @@ function push(cfg, files) {
     return call('POST', '/git/trees', { tree: tree });
   }).then(function (t) {
     return call('POST', '/git/commits', {
-      message: 'Actualizacion completa: panel nuevo y worker de Windows',
+      message: 'Gemini 3.6, seleccion de grupos y correccion del worker',
       tree: t.sha,
       parents: parent ? [parent] : []
     });

@@ -19,8 +19,8 @@ Funciona en Windows 7/8/10/11 con Chrome. No hace falta Node.js nuevo para el wo
 ### 2-Subir-a-GitHub.bat — reemplaza todo el repositorio y publica el panel
 Necesita Node.js (sirve cualquier versión, incluso muy vieja).
 1. Una sola vez: en GitHub creá una **OAuth App** (https://github.com/settings/developers → New OAuth App), tildá **Enable Device Flow** y copiá el **Client ID**.
-2. Abrí el `.bat`. Pide `usuario/repositorio` y el Client ID (se guardan en `tools/data/`).
-3. Escribí `SI` para confirmar. Te muestra un **código** (`XXXX-XXXX`) y abre https://github.com/login/device: ingresalo y autorizá.
+2. Abrí el `.bat`. Pide `usuario/repositorio` (el Client ID solo si no encuentra uno guardado).
+3. Si no hay una sesión guardada, muestra un **código** (`XXXX-XXXX`) y abre https://github.com/login/device: ingresalo y autorizá.
 4. Sube todos los archivos reemplazando el contenido del repo (el historial anterior queda en GitHub). Al subir a `main`, GitHub Actions publica el Worker en Cloudflare y el `.bat` avisa cuando terminó. Recargá el panel con Ctrl+F5.
 
 ### 1-Instalar-Worker-en-Chrome.bat — el worker que publica en Facebook

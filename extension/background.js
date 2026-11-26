@@ -1,6 +1,6 @@
 // Cada minuto pregunta al panel si hay una tarea lista y la publica en el grupo de Facebook
 // usando tu propia sesion de Chrome. Pausa entre grupos y tope diario incluidos.
-var VERSION = '1.2.0';
+var VERSION = '1.3.0';
 var busy = false;
 
 function get(k) { return chrome.storage.local.get(k); }
@@ -94,7 +94,11 @@ async function publish(cfg, job, dry) {
     });
     var res = null;
     for (var i = 0; i < 10 && !res; i++) {
-      try { await chrome.tabs.sendMessage(tabId, { type: 'ping' }); res = true; } catch (e) { await sleep(1000); }
+      try { await chrome.tabs.sendMessage(tabId, { type: 'ping' }); res = true; } catch (e) {
+        // Si la pagina no tiene el script, se lo inyecta.
+        try { await chrome.scripting.executeScript({ target: { tabId: tabId }, files: ['fb.js'] }); } catch (e2) {}
+        await sleep(1000);
+      }
     }
     if (!res) throw new Error('No se pudo comunicar con la pagina de Facebook. Recarga la extension.');
     var timer;
@@ -103,7 +107,7 @@ async function publish(cfg, job, dry) {
       new Promise(function (ok, no) { timer = setTimeout(function () { no(new Error('Facebook no respondio en 4 minutos. Revisa el grupo antes de reintentar.')); }, 240000); })
     ]).finally(function () { clearTimeout(timer); });
     if (!out) throw new Error('Sin respuesta de la pagina de Facebook.');
-    if (!out.ok) { var e = new Error(out.error || 'Error desconocido'); e.human = out.human; throw e; }
+    if (!out.ok) { if (!dry) await sleep(20000); var e = new Error(out.error || 'Error desconocido'); e.human = out.human; throw e; }
     return out;
   } finally {
     if (!dry) { try { await chrome.windows.remove(win.id); } catch (e) {} }

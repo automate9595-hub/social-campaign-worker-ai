@@ -90,7 +90,17 @@
     var c = composer();
     return !!c && norm(c.box.innerText).indexOf(norm(text).slice(0, 15)) >= 0;
   }
-  function step(text) { try { chrome.runtime.sendMessage({ type: 'step', text: text }); } catch (e) {} }
+  function banner(text) {
+    var b = document.getElementById('sc-banner');
+    if (!b) {
+      b = document.createElement('div');
+      b.id = 'sc-banner';
+      b.style.cssText = 'position:fixed;left:10px;bottom:10px;z-index:2147483647;max-width:360px;padding:10px 14px;border-radius:8px;background:#12203a;color:#fff;font:14px/1.4 Arial,sans-serif;pointer-events:none';
+      document.documentElement.appendChild(b);
+    }
+    b.textContent = 'Social Campaign 1.3.0: ' + text;
+  }
+  function step(text) { banner(text); try { chrome.runtime.sendMessage({ type: 'step', text: text }); } catch (e) {} }
 
   async function writeText(text) {
     var methods = ['paste', 'insert'];
@@ -106,24 +116,48 @@
     fail('No se pudo escribir la descripcion en el cuadro de Facebook.');
   }
 
-  async function attach(dialog, box, files) {
-    var before = all(dialog, 'img').length;
-    var input = imageInput(dialog);
-    if (!input) {
-      var btn = dialog.querySelector('[aria-label="Foto/video"],[aria-label="Photo/video"],[aria-label="Foto o video"]') ||
-        findByText(dialog, /(foto|photo)/i, '[role="button"],button');
+  var OPENER = /(escribe algo|escribe una publicaci|crea una publicaci|write something|create a (public )?post|qu[eé] est[aá]s pensando)/i;
+  function findOpeners() {
+    return all(document, '[role="button"],span').filter(function (el) {
+      var t = labelOf(el), s = (el.innerText || '').trim();
+      return visible(el) && !el.closest('[role="dialog"]') && ((t.length < 80 && OPENER.test(t)) || (s.length < 80 && OPENER.test(s)));
+    });
+  }
+
+  // Toca "Escribe algo..." y reintenta si el cuadro no se abre.
+  async function openComposer() {
+    step('Buscando "Escribe algo..."');
+    for (var i = 0; i < 4; i++) {
+      var list = await waitFor(function () { var l = findOpeners(); return l.length ? l : null; }, i ? 5000 : 30000);
+      if (composer()) return composer();
+      if (!list) break;
+      var el = list[i % list.length];
+      el.scrollIntoView({ block: 'center' });
+      await sleep(800);
+      step('Tocando "Escribe algo..." (intento ' + (i + 1) + ')');
+      click(el.querySelector('span') || el);
+      var c = await waitFor(composer, 10000);
+      if (c) return c;
+    }
+    fail('No se pudo abrir el cuadro "Escribe algo..." en este grupo.');
+  }
+
+  async function attach(files) {
+    function dlg() { var c = composer(); return c ? c.dialog : null; }
+    function imgs() { var d = dlg(); return d ? all(d, 'img').length : 0; }
+    function input() { var d = dlg(); return d ? imageInput(d) : null; }
+    var before = imgs();
+    var found = input();
+    if (!found) {
+      var d = dlg();
+      var btn = d && (d.querySelector('[aria-label="Foto/video"],[aria-label="Photo/video"],[aria-label="Foto o video"]') ||
+        findByText(d, /(foto|photo)/i, '[role="button"],button'));
       if (btn) click(btn);
-      input = await waitFor(function () { return imageInput(dialog); }, 8000);
+      found = await waitFor(input, 10000);
     }
-    if (input) {
-      setFiles(input, files);
-    } else {
-      var dt = new DataTransfer();
-      files.forEach(function (f) { dt.items.add(f); });
-      box.focus();
-      box.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
-    }
-    var ok = await waitFor(function () { return all(dialog, 'img').length > before; }, 45000);
+    if (!found) fail('No se encontro donde subir la foto.');
+    setFiles(found, files);
+    var ok = await waitFor(function () { return imgs() > before; }, 45000);
     if (!ok) fail('No se pudieron cargar las fotos en la publicacion.');
     await sleep(2500 + files.length * 1200);
   }
@@ -134,19 +168,7 @@
     if (needsHuman()) fail('Facebook pide iniciar sesion o verificar la cuenta. Resolvelo en Chrome.', true);
     if (findByText(document.body, JOIN, '[role="button"],button')) fail('Tu cuenta todavia no es miembro de este grupo.');
 
-    var opener = await waitFor(function () {
-      var list = all(document, '[role="button"]').filter(visible);
-      for (var i = 0; i < list.length; i++) if (COMPOSER.test((list[i].innerText || '').trim())) return list[i];
-      var spans = all(document, 'span').filter(visible);
-      for (var j = 0; j < spans.length; j++) if (COMPOSER.test((spans[j].innerText || '').trim())) return spans[j];
-      return null;
-    }, 25000);
-    if (!opener) fail("No se encontro el cuadro 'Escribe algo...'. El grupo puede no permitir publicar o Facebook cambio su diseno.");
-    step('Abriendo el cuadro de publicacion');
-    click(opener);
-
-    var c = await waitFor(composer, 30000);
-    if (!c) fail('Se abrio Facebook pero no se encontro el campo de texto.');
+    var c = await openComposer();
     await sleep(1500);
     step('Escribiendo la descripcion');
     await writeText(msg.text);
@@ -156,8 +178,8 @@
     c = composer();
     if (!c) fail('El cuadro de publicacion se cerro.');
     if (files.length) {
-      step('Cargando fotos');
-      await attach(c.dialog, c.box, files);
+      step('Subiendo ' + files.length + ' foto(s)');
+      await attach(files);
     }
     c = composer();
     if (!c || !hasText(msg.text)) fail('La descripcion se borro antes de publicar; no se publico.');
@@ -187,7 +209,7 @@
     if (!msg) return;
     if (msg.type === 'ping') { send({ pong: 1 }); return; }
     if (msg.type === 'publish') {
-      run(msg).then(send, function (e) { send({ ok: false, error: String(e.message || e), human: !!e.human }); });
+      run(msg).then(function (r) { banner(r.dry ? 'Prueba lista, sin publicar.' : 'Publicacion terminada.'); send(r); }, function (e) { banner('ERROR: ' + (e.message || e)); send({ ok: false, error: String(e.message || e), human: !!e.human }); });
       return true;
     }
   });

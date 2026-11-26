@@ -98,7 +98,7 @@
       b.style.cssText = 'position:fixed;left:10px;bottom:10px;z-index:2147483647;max-width:360px;padding:10px 14px;border-radius:8px;background:#12203a;color:#fff;font:14px/1.4 Arial,sans-serif;pointer-events:none';
       document.documentElement.appendChild(b);
     }
-    b.textContent = 'Social Campaign 1.3.0: ' + text;
+    b.textContent = 'Social Campaign 1.4.0: ' + text;
   }
   function step(text) { banner(text); try { chrome.runtime.sendMessage({ type: 'step', text: text }); } catch (e) {} }
 
@@ -209,7 +209,9 @@
     if (!msg) return;
     if (msg.type === 'ping') { send({ pong: 1 }); return; }
     if (msg.type === 'publish') {
-      run(msg).then(function (r) { banner(r.dry ? 'Prueba lista, sin publicar.' : 'Publicacion terminada.'); send(r); }, function (e) { banner('ERROR: ' + (e.message || e)); send({ ok: false, error: String(e.message || e), human: !!e.human }); });
+      // En Chrome viejo la extension se duerme si no recibe nada.
+      var alive = setInterval(function () { try { chrome.runtime.sendMessage({ type: 'alive' }); } catch (e) {} }, 10000);
+      run(msg).finally(function () { clearInterval(alive); }).then(function (r) { banner(r.dry ? 'Prueba lista, sin publicar.' : 'Publicacion terminada.'); send(r); }, function (e) { banner('ERROR: ' + (e.message || e)); send({ ok: false, error: String(e.message || e), human: !!e.human }); });
       return true;
     }
   });

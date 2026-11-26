@@ -1,6 +1,6 @@
 // Cada minuto pregunta al panel si hay una tarea lista y la publica en el grupo de Facebook
 // usando tu propia sesion de Chrome. Pausa entre grupos y tope diario incluidos.
-var VERSION = '1.3.0';
+var VERSION = '1.4.0';
 var busy = false;
 
 function get(k) { return chrome.storage.local.get(k); }
@@ -195,7 +195,35 @@ function writeInPage(method, text) {
   }
 }
 
+// Pedido desde el panel ("Ahora" o "Publicar ya").
+async function fromPanel(msg, origin) {
+  var cfg = await getCfg();
+  var linked = '';
+  if (cfg.workerUrl) try { linked = new URL(/^https?:/i.test(cfg.workerUrl) ? cfg.workerUrl : 'https://' + cfg.workerUrl).origin; } catch (e) {}
+  if (linked && linked !== origin) return 'La extensión está vinculada a otra dirección (' + linked + '). Corregila en la ventanita de la extensión.';
+  cfg.workerUrl = origin;
+  cfg.adminToken = msg.token;
+  await set({ cfg: cfg });
+  await beat(cfg, 'Conectado');
+  if (msg.action !== 'run') return 'Conectada (versión ' + VERSION + ').';
+  if (!cfg.enabled) return 'La extensión está desactivada: marcá "Worker activo" en su ventanita.';
+  if (busy) return 'Ya hay una publicación en curso; la siguiente sale cuando termine.';
+  var st = (await get('st')).st || {};
+  delete st.pauseUntil;
+  await set({ st: st });
+  if (st.day === today() && st.count >= cfg.maxPerDay) return 'Se alcanzó el límite de ' + cfg.maxPerDay + ' publicaciones por día.';
+  var wait = Math.ceil(((st.nextAt || 0) - Date.now()) / 1000);
+  if (wait > 0) return 'Pausa entre grupos: la siguiente sale sola en ' + (wait < 60 ? 'menos de 2 minutos' : 'unos ' + Math.ceil(wait / 60 + 1) + ' minutos') + '.';
+  tick(false).catch(function (e) { status('Error: ' + e.message); });
+  return 'Orden recibida. Abriendo el grupo...';
+}
+
 chrome.runtime.onMessage.addListener(function (msg, sender, send) {
+  if (msg && msg.type === 'alive') return;
+  if (msg && msg.type === 'panel' && sender.tab) {
+    fromPanel(msg, new URL(sender.url).origin).then(function (t) { send({ text: t }); }, function (e) { send({ text: 'Error: ' + e.message }); });
+    return true;
+  }
   if (msg && msg.type === 'write' && sender.tab) {
     chrome.scripting.executeScript({ target: { tabId: sender.tab.id }, world: 'MAIN', func: writeInPage, args: [msg.method, msg.text] })
       .then(function () { send({ ok: true }); }, function () { send({ ok: false }); });

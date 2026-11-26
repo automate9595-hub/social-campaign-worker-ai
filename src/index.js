@@ -84,9 +84,9 @@ function ensureSchema(env) {
 
 async function promoteDue(env) {
  const nowIso = new Date().toISOString();
- const stale = new Date(Date.now() - 20 * 60000).toISOString();
- // Una tarea "running" que lleva mas de 20 min quedo colgada: vuelve a la cola.
- await env.DB.prepare("UPDATE sc_jobs SET status='ready' WHERE status='running' AND started_at<?").bind(stale).run();
+ const stale = new Date(Date.now() - 8 * 60000).toISOString();
+ // Una tarea "running" de mas de 8 min quedo colgada: no se repite sola para no duplicar.
+ await env.DB.prepare("UPDATE sc_jobs SET status='failed',last_error='Quedó interrumpida. Revisá el grupo antes de reintentar.' WHERE status='running' AND started_at<?").bind(stale).run();
  const r = await env.DB.prepare("UPDATE sc_jobs SET status='ready' WHERE status='pending' AND scheduled_at<=?").bind(nowIso).run();
  return r.meta?.changes || 0;
 }

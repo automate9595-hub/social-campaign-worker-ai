@@ -108,7 +108,7 @@ textarea{min-height:130px;resize:vertical}
 #toast{position:fixed;left:50%;bottom:22px;transform:translate(-50%,20px);opacity:0;pointer-events:none;background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:10px;font-weight:600;max-width:calc(100vw - 32px);transition:opacity .2s,transform .2s;z-index:9}
 #toast.show{opacity:1;transform:translate(-50%,0)}
 #toast.bad{background:var(--bad);color:#fff}
-section[hidden]{display:none}
+[hidden]{display:none!important}
 
 #mbar{display:none;align-items:center;gap:8px;font-size:13px;color:var(--muted);margin:-10px 0 14px}
 @media (max-width:820px){
@@ -142,6 +142,7 @@ section[hidden]{display:none}
 
  <main>
   <div id="mbar"><i class="dot" id="rDot2"></i><span id="rInfo2">Worker de Windows: sin conexión</span></div>
+  <div class="card" role="status"><b>Extensión: </b><span id="extText">no detectada. Instalala o recargala y apretá F5.</span></div>
   <div class="stats">
    <div class="stat"><b id="sGroups">0</b><span>Grupos</span></div>
    <div class="stat"><b id="sCamps">0</b><span>Campañas</span></div>
@@ -392,6 +393,15 @@ function renderNewThumbs(){
 }
 
 /* ---------- Acciones ---------- */
+/* ---------- Extensión ---------- */
+function ext(action){window.postMessage({sc:"panel",action:action,token:TOKEN},location.origin)}
+window.addEventListener("message",function(e){
+ if(e.source!==window||!e.data)return;
+ if(e.data.sc==="ready")ext("hello");
+ if(e.data.sc==="ext"){$("extText").textContent=e.data.text;refresh(true)}
+});
+ext("hello");
+
 var ACT={
  async addDest(){
   var name=$("destName").value.trim(),url=$("destUrl").value.trim();
@@ -464,10 +474,11 @@ var ACT={
    body.scheduled_at=new Date(d+"T"+t).toISOString();
   }
   var r=await api("/api/jobs","POST",body);
+  if(body.now)ext("run");
   await refresh(true);
   toast(r.created+(r.created===1?" publicación en cola":" publicaciones en cola"));
  },
- async runJob(el){await api("/api/jobs/"+el.dataset.id+"/run","POST");await refresh(true);toast("Enviada al worker")},
+ async runJob(el){await api("/api/jobs/"+el.dataset.id+"/run","POST");ext("run");await refresh(true);toast("Enviada al worker")},
  async delJob(el){await api("/api/jobs/"+el.dataset.id,"DELETE");await refresh(true);toast("Quitada")},
  refresh(){return refresh(false)}
 };

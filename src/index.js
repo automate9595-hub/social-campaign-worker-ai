@@ -30,81 +30,121 @@ async function rewriteWithGemini(env, text) {
     .filter(Boolean);
 
   if (!keys.length) {
-    throw new Error("No está configurado GEMINI_API_KEYS.");
+    throw new Error("Falta configurar GEMINI_API_KEYS en Cloudflare.");
   }
 
+  const models = [
+    "gemini-3-flash-preview",
+    "gemini-2.5-flash",
+    "gemini-2.0-flash",
+  ];
+
   const prompt = `
-Reescribí el siguiente texto para una publicación comercial
-atractiva para redes sociales.
+Convertí el texto en una publicación comercial atractiva para redes sociales.
 
-Reglas:
-- Conservá exactamente los datos reales.
-- No inventes precios, productos, promociones ni características.
-- Utilizá un tono comercial natural.
-- Utilizá emojis cuando sean apropiados.
-- Entregá solamente el texto final.
+REGLAS:
+- No inventes información.
+- No alteres precios, nombres, productos ni condiciones.
+- Mejorá la redacción.
+- Usá emojis moderadamente.
+- Entregá únicamente el texto final de la publicación.
 
-Texto original:
+TEXTO ORIGINAL:
 ${text}
 `;
 
-  let lastError = "";
+  let lastError = "No se pudo obtener respuesta de Gemini.";
+  let attempts = 0;
+  const maxAttempts = Math.min(keys.length * models.length, 4);
 
-  for (const key of keys) {
-    try {
-      const res = await fetch(
-        "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-goog-api-key": key,
-          },
-          body: JSON.stringify({
-            contents: [
-              {
-                parts: [{ text: prompt }],
+  for (const model of models) {
+    for (const key of keys) {
+      if (attempts >= maxAttempts) break;
+      attempts++;
+
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 12000);
+
+        let res;
+
+        try {
+          res = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "x-goog-api-key": key,
               },
-            ],
-          }),
+              body: JSON.stringify({
+                contents: [
+                  {
+                    parts: [{ text: prompt }],
+                  },
+                ],
+                generationConfig: {
+                  temperature: 0.7,
+                  maxOutputTokens: 1024,
+                },
+              }),
+              signal: controller.signal,
+            }
+          );
+        } finally {
+          clearTimeout(timeout);
         }
-      );
 
-      const data = await res.json().catch(() => ({}));
+        const data = await res.json().catch(() => ({}));
 
-      if (res.ok) {
-        const result =
-          data?.candidates?.[0]?.content?.parts
-            ?.map((part) => part.text || "")
-            .join("\n") || "";
+        if (res.ok) {
+          const result =
+            data?.candidates?.[0]?.content?.parts
+              ?.map((part) => part.text || "")
+              .join("\n") || "";
 
-        if (!result.trim()) {
-          throw new Error("Gemini no devolvió contenido.");
+          if (result.trim()) {
+            return result.trim();
+          }
+
+          lastError = `El modelo ${model} no devolvió texto.`;
+          continue;
         }
 
-        return result.trim();
-      }
+        lastError =
+          data?.error?.message ||
+          `Google respondió HTTP ${res.status}.`;
 
-      lastError =
-        data?.error?.message ||
-        `Error de Gemini HTTP ${res.status}`;
+        // Se continúa ante problemas temporales, de modelo o cuota.
+        if (
+          res.status === 429 ||
+          res.status === 500 ||
+          res.status === 502 ||
+          res.status === 503 ||
+          res.status === 504 ||
+          res.status === 404
+        ) {
+          continue;
+        }
 
-      if (
-        res.status !== 429 &&
-        res.status !== 500 &&
-        res.status !== 502 &&
-        res.status !== 503 &&
-        res.status !== 504
-      ) {
-        throw new Error(lastError);
+        // Error de autenticación, permisos u otra configuración.
+        if (res.status === 400 || res.status === 401 || res.status === 403) {
+          lastError = `Google API (${res.status}): ${lastError}`;
+          continue;
+        }
+      } catch (error) {
+        lastError =
+          error.name === "AbortError"
+            ? "Google demoró más de 12 segundos en responder."
+            : error.message || "Error de conexión con Google.";
       }
-    } catch (error) {
-      lastError = error.message || "Error de conexión con Gemini";
     }
+
+    if (attempts >= maxAttempts) break;
   }
 
   throw new Error(
-    "Se agotaron las claves disponibles de Gemini. " + lastError
+    `Gemini no respondió después de ${attempts} intentos. Último error: ${lastError}`
   );
 }
 
@@ -170,6 +210,10 @@ button.secondary{
   background:#293243;
   color:white;
 }
+button:disabled{
+  opacity:.5;
+  cursor:wait;
+}
 #result,#status{
   white-space:pre-wrap;
   overflow-wrap:anywhere;
@@ -198,7 +242,7 @@ small{color:#aab5c5}
 <label>Texto de la publicación</label>
 <textarea id="text" placeholder="Escribí el texto de tu publicación..."></textarea>
 
-<button onclick="rewrite()">Mejorar texto con IA</button>
+<button id="rewriteBtn" onclick="rewrite()">Mejorar texto con IA</button>
 <button class="secondary" onclick="save()">Guardar borrador</button>
 
 <div id="result"></div>
@@ -220,13 +264,16 @@ small{color:#aab5c5}
 <script>
 async function rewrite(){
   const text=document.getElementById('text').value;
+  const btn=document.getElementById('rewriteBtn');
+  const out=document.getElementById('result');
+
   if(!text.trim()){
     alert('Escribí primero el texto.');
     return;
   }
 
-  const out=document.getElementById('result');
-  out.textContent='Procesando con Gemini 3.6 Flash...';
+  btn.disabled=true;
+  out.textContent='Consultando Gemini. Esto puede tardar...';
 
   try{
     const r=await fetch('/api/rewrite',{
@@ -236,25 +283,27 @@ async function rewrite(){
     });
 
     const d=await r.json();
-    if(!r.ok)throw new Error(d.error||'Error');
+    if(!r.ok)throw new Error(d.error||'Error desconocido');
 
     document.getElementById('text').value=d.text;
     out.textContent='Texto mejorado correctamente.';
   }catch(e){
-    out.textContent='Error: '+e.message;
+    out.textContent='ERROR: '+e.message;
+  }finally{
+    btn.disabled=false;
   }
 }
 
 async function save(){
   const title=document.getElementById('title').value.trim();
   const text=document.getElementById('text').value.trim();
+  const out=document.getElementById('result');
 
   if(!text){
     alert('Ingresá un texto.');
     return;
   }
 
-  const out=document.getElementById('result');
   out.textContent='Guardando...';
 
   try{
@@ -306,7 +355,6 @@ async function loadDrafts(){
       div.appendChild(heading);
       div.appendChild(paragraph);
       div.appendChild(date);
-
       box.appendChild(div);
     });
   }catch(e){
@@ -430,9 +478,7 @@ export default {
         });
       }
 
-      return response({
-        error: "Ruta no encontrada.",
-      }, 404);
+      return response({ error: "Ruta no encontrada." }, 404);
 
     } catch (error) {
       return response({

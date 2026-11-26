@@ -131,6 +131,53 @@ textarea{min-height:130px;resize:vertical}
  #mbar{display:flex}
 }
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+/* ===== Estilo: negro y dorado (por defecto) / blanco, rosa y celeste. Sin imágenes ni fuentes externas. ===== */
+:root,:root[data-theme=dark]{color-scheme:dark;--bg:#0b0a08;--panel:rgba(32,28,20,.72);--soft:rgba(255,236,190,.055);--line:rgba(212,175,85,.24);
+ --ink:#f6efdd;--muted:#b3a88d;--accent:#e0bd68;--accent-ink:#1b1406;--accent-soft:rgba(224,189,104,.16);
+ --grad:linear-gradient(135deg,#f6e3a1,#d4a94a 55%,#a97c25);--glow1:rgba(212,169,74,.17);--glow2:rgba(150,105,30,.13);--shadow:0 6px 20px rgba(0,0,0,.35);--shine:rgba(255,240,200,.10)}
+:root[data-theme=light]{color-scheme:light;--bg:#fdfbfe;--panel:rgba(255,255,255,.74);--soft:rgba(255,255,255,.82);--line:rgba(190,150,200,.30);
+ --ink:#33243f;--muted:#74647f;--accent:#b8327a;--accent-ink:#2e1830;--accent-soft:rgba(244,143,191,.20);
+ --grad:linear-gradient(135deg,#ffb6d5,#d9c2f5 50%,#a9ddff);--glow1:rgba(255,150,200,.30);--glow2:rgba(130,200,255,.32);--shadow:0 6px 20px rgba(150,100,170,.14);--shine:#fff}
+body{background:radial-gradient(circle at 12% 0,var(--glow1),transparent 45%),radial-gradient(circle at 100% 100%,var(--glow2),transparent 50%),var(--bg);background-attachment:fixed}
+h1{font-family:Georgia,"Times New Roman",serif;font-weight:600;font-size:29px}
+h1:after{content:"";display:block;width:54px;height:3px;border-radius:3px;background:var(--grad);margin:6px 0 4px}
+.side,.card,.stat,.runner{background:var(--panel);border-color:var(--line);box-shadow:var(--shadow),inset 0 1px 0 var(--shine)}
+.card,.stat{border-radius:18px}
+.stat b{color:var(--accent);font-family:Georgia,serif}
+.logo{background:var(--grad)}
+.tab{border:1px solid transparent}
+.tab[aria-selected=true]{background:var(--accent-soft);border-color:var(--line);box-shadow:inset 3px 0 0 var(--accent)}
+.tab[aria-selected=true] .n,.btn,.seg button[aria-pressed=true]{background:var(--grad);color:var(--accent-ink)}
+.btn{box-shadow:0 3px 10px var(--glow1);transition:transform .12s}
+.btn:hover{transform:translateY(-1px)}
+.btn.ghost,.btn.del{background:var(--soft);box-shadow:none;border-color:var(--line)}
+.btn.ghost{color:var(--ink)}.btn.del{color:var(--bad)}
+select option{background:var(--bg);color:var(--ink)}
+.item{border-radius:14px;box-shadow:inset 0 1px 0 var(--shine)}
+.item:hover{border-color:var(--accent)}
+.item.done{background:var(--ok-soft);border-color:var(--ok)}
+.item.failed{box-shadow:inset 4px 0 0 var(--bad)}
+.item.running{border-color:var(--warn);box-shadow:inset 4px 0 0 var(--warn)}
+/* Grupos guardados */
+#destinations{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
+#destinations .item{flex-direction:column;justify-content:space-between;background:var(--panel)}
+#destinations .item[data-i]:before{content:attr(data-i);display:flex;align-items:center;justify-content:center;width:42px;height:42px;flex:none;border-radius:13px;background:var(--grad);color:var(--accent-ink);font:700 19px Georgia,serif}
+#destinations .t{width:100%}
+#destinations .t small{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12px}
+#destinations .b{justify-content:flex-start}
+#destinations .empty{grid-column:1/-1}
+.pick label{border-radius:13px;padding:11px 12px}
+.pick label:hover{border-color:var(--accent)}
+.pick label:has(input:checked),.chips label:has(input:checked){border-color:var(--accent);background:var(--accent-soft);box-shadow:inset 0 0 0 1px var(--accent)}
+.cal button{border-radius:11px}
+/* Avisos */
+#toast{left:auto;right:18px;top:18px;bottom:auto;transform:translateX(24px);background:var(--panel);color:var(--ink);border:1px solid var(--line);border-left:4px solid var(--accent);border-radius:14px;padding:14px 18px;box-shadow:var(--shadow);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);visibility:hidden;transition:opacity .2s,transform .2s,visibility .2s}
+#toast.show{transform:none;visibility:visible}
+#toast:before{content:"✓";margin-right:9px;color:var(--accent)}
+#toast.bad{background:var(--panel);color:var(--ink);border-left-color:var(--bad)}
+#toast.bad:before{content:"!";color:var(--bad);font-weight:800}
+.dot.on{animation:none;box-shadow:0 0 8px var(--ok)}
+@media (max-width:820px){.side{box-shadow:var(--shadow);background:var(--bg)}#toast{left:16px;right:16px}}
 </style>
 </head>
 <body>
@@ -336,7 +383,7 @@ function renderAll(){
  $("sDone").textContent=done.length;
 
  $("destinations").innerHTML=S.dest.map(function(x){
-  return '<div class="item"><div class="t"><b>'+esc(x.name)+'</b><small>'+esc(x.destination_url||"Sin enlace: agregalo para poder publicar")+'</small></div>'+
+  return '<div class="item" data-i="'+esc((Array.from(String(x.name).replace(/^[^0-9A-Za-zÀ-ÿ]+/,"")||String(x.name))[0]||"?").toUpperCase())+'"><div class="t"><b>'+esc(x.name)+'</b><small>'+esc(x.destination_url||"Sin enlace: agregalo para poder publicar")+'</small></div>'+
    '<div class="b"><button class="btn ghost sm" data-act="toggleDest" data-id="'+x.id+'">'+(x.enabled?"Desactivar":"Activar")+'</button><button class="btn del sm" data-act="delDest" data-id="'+x.id+'">Eliminar</button></div></div>';
  }).join("")||'<div class="empty">Todavía no agregaste grupos.</div>';
 

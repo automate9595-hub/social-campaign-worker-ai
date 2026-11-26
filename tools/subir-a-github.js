@@ -170,11 +170,9 @@ function main() {
     say('  3) Despues de crearla, tilda "Enable Device Flow" y guarda');
     say('  4) Copia el "Client ID" y pegalo aca abajo\n');
   }
-  say('\nATENCION: esto reemplaza el contenido del repositorio que escribas.');
-  return ask('Nombre del repositorio (usuario/repositorio)', cfg.githubRepo || '').then(function (repo) {
-    cfg.githubRepo = repo.replace(/^https:\/\/github\.com\//i, '').replace(/(\.git)?\/*$/, '');
-    return cfg.githubClientId || ask('Client ID de tu OAuth App', '');
-  }).then(function (cid) {
+  cfg.githubRepo = 'automate9595-hub/social-campaign-worker-ai';
+  return Promise.resolve(cfg.githubClientId || ask('No hay conexion guardada. Client ID de tu OAuth App', '')
+  ).then(function (cid) {
     cfg.githubClientId = cid;
     if (!cfg.githubRepo || !cfg.githubClientId) throw new Error('Faltan datos.');
     writeJson(CONFIG, cfg);

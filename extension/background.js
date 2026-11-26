@@ -1,6 +1,6 @@
 // Cada minuto pregunta al panel si hay una tarea lista y la publica en el grupo de Facebook
 // usando tu propia sesion de Chrome. Pausa entre grupos y tope diario incluidos.
-var VERSION = '1.1.0';
+var VERSION = '1.2.0';
 var busy = false;
 
 function get(k) { return chrome.storage.local.get(k); }
@@ -21,7 +21,9 @@ async function addLog(text) {
 }
 
 async function api(cfg, path, method, body) {
-  var r = await fetch(cfg.workerUrl.replace(/\/+$/, '') + path, {
+  var base = String(cfg.workerUrl).trim();
+  if (!/^https?:\/\//i.test(base)) base = 'https://' + base;
+  var r = await fetch(new URL(base).origin + path, {
     method: method || 'GET',
     headers: { 'X-Admin-Token': cfg.adminToken, 'Content-Type': 'application/json' },
     body: body ? JSON.stringify(body) : undefined
@@ -64,7 +66,7 @@ async function waitComplete(tabId, timeout) {
     if (t.status === 'complete') return;
     await sleep(500);
   }
-  throw new Error('Facebook tardo demasiado en cargar.');
+  // Facebook a veces nunca termina de cargar: se sigue igual y fb.js espera el cuadro.
 }
 
 async function publish(cfg, job, dry) {
@@ -72,7 +74,7 @@ async function publish(cfg, job, dry) {
   if (!/(^|\.)facebook\.com$/i.test(u.hostname)) throw new Error('El enlace del grupo no es de Facebook.');
   u.hostname = 'www.facebook.com';
   var images = await loadImages(cfg, job);
-  var win = await chrome.windows.create({ url: u.toString(), type: 'normal', focused: true, width: 1000, height: 760, left: 40, top: 40 });
+  var win = await chrome.windows.create({ url: u.toString(), type: 'normal', focused: true });
   var tabId = win.tabs[0].id;
   try {
     await waitComplete(tabId, 60000);
@@ -95,7 +97,11 @@ async function publish(cfg, job, dry) {
       try { await chrome.tabs.sendMessage(tabId, { type: 'ping' }); res = true; } catch (e) { await sleep(1000); }
     }
     if (!res) throw new Error('No se pudo comunicar con la pagina de Facebook. Recarga la extension.');
-    var out = await chrome.tabs.sendMessage(tabId, { type: 'publish', text: job.text, images: images, dry: !!dry });
+    var timer;
+    var out = await Promise.race([
+      chrome.tabs.sendMessage(tabId, { type: 'publish', text: job.text, images: images, dry: !!dry }),
+      new Promise(function (ok, no) { timer = setTimeout(function () { no(new Error('Facebook no respondio en 4 minutos. Revisa el grupo antes de reintentar.')); }, 240000); })
+    ]).finally(function () { clearTimeout(timer); });
     if (!out) throw new Error('Sin respuesta de la pagina de Facebook.');
     if (!out.ok) { var e = new Error(out.error || 'Error desconocido'); e.human = out.human; throw e; }
     return out;
@@ -107,11 +113,16 @@ async function publish(cfg, job, dry) {
 async function tick(dry) {
   if (busy) return;
   busy = true;
-  var keep = setInterval(function () { chrome.runtime.getPlatformInfo(); }, 20000);
+  var current = 'Trabajando';
+  var keep = setInterval(async function () {
+    var c = await getCfg();
+    var s = (await get('status')).status;
+    if (c.workerUrl && c.adminToken) beat(c, s ? s.text : current);
+  }, 20000);
   try {
     var cfg = await getCfg();
     if (!cfg.workerUrl || !cfg.adminToken) { await status('Falta configurar la URL y la clave.'); return; }
-    if (!cfg.enabled && !dry) { await status('En pausa (desactivado).'); return; }
+    if (!cfg.enabled && !dry) { await status('En pausa (desactivado).'); await beat(cfg, 'Desactivado en la extension'); return; }
 
     var st = (await get('st')).st || {};
     var count = st.day === today() ? (st.count || 0) : 0;
@@ -161,7 +172,8 @@ async function tick(dry) {
   }
 }
 
-chrome.alarms.create('tick', { periodInMinutes: 1 });
+// Si la alarma se perdio, se vuelve a crear cada vez que la extension despierta.
+chrome.alarms.get('tick').then(function (a) { if (!a) chrome.alarms.create('tick', { periodInMinutes: 1 }); });
 chrome.alarms.onAlarm.addListener(function (a) { if (a.name === 'tick') tick(false); });
 chrome.runtime.onInstalled.addListener(function () { chrome.alarms.create('tick', { periodInMinutes: 1 }); tick(false); });
 chrome.runtime.onStartup.addListener(function () { tick(false); });

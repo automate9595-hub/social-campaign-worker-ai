@@ -362,6 +362,7 @@ function renderRunner(r){
  var txt=on?("En línea"+(r.runner.state?" · "+r.runner.state:"")):(r&&r.runner?"Sin señal desde "+fmt(r.runner.at):"Sin conexión todavía");
  $("rDot").className="dot"+(on?" on":(r&&r.runner?" warn":""));
  $("rDot2").className=$("rDot").className;
+ if(!on)txt+=". Abrí Chrome, tocá el ícono de la extensión, revisá URL y clave, y tocá Buscar tareas ya";
  $("rInfo").textContent=on?txt+(r.runner.host?" ("+r.runner.host+")":""):txt;
  $("rInfo2").textContent="Worker de Windows: "+txt;
 }

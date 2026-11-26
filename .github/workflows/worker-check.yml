@@ -1,0 +1,15 @@
+name: Validar Worker
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Descargar repositorio
+        uses: actions/checkout@v4
+      - name: Validar sintaxis JavaScript
+        run: node --check src/index.js
+      - name: Comprobar archivos esenciales
+        run: test -f wrangler.toml && test -f schema.sql

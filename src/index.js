@@ -34,12 +34,12 @@ async function rewriteWithGemini(env, text) {
   }
 
   const prompt = `
-Reescribí el siguiente texto para una publicación comercial atractiva
-para redes sociales.
+Reescribí el siguiente texto para una publicación comercial
+atractiva para redes sociales.
 
 Reglas:
 - Conservá exactamente los datos reales.
-- No inventes precios, productos, promociones, características ni condiciones.
+- No inventes precios, productos, promociones ni características.
 - Utilizá un tono comercial natural.
 - Utilizá emojis cuando sean apropiados.
 - Entregá solamente el texto final.
@@ -53,7 +53,7 @@ ${text}
   for (const key of keys) {
     try {
       const res = await fetch(
-        "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
+        "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent",
         {
           method: "POST",
           headers: {
@@ -89,8 +89,6 @@ ${text}
         data?.error?.message ||
         `Error de Gemini HTTP ${res.status}`;
 
-      // Se prueba otra clave únicamente ante errores transitorios
-      // de cuota, disponibilidad o servidor.
       if (
         res.status !== 429 &&
         res.status !== 500 &&
@@ -226,8 +224,9 @@ async function rewrite(){
     alert('Escribí primero el texto.');
     return;
   }
+
   const out=document.getElementById('result');
-  out.textContent='Procesando con Gemini...';
+  out.textContent='Procesando con Gemini 3.6 Flash...';
 
   try{
     const r=await fetch('/api/rewrite',{
@@ -235,10 +234,12 @@ async function rewrite(){
       headers:{'Content-Type':'application/json'},
       body:JSON.stringify({text})
     });
+
     const d=await r.json();
     if(!r.ok)throw new Error(d.error||'Error');
+
     document.getElementById('text').value=d.text;
-    out.textContent='Texto mejorado.';
+    out.textContent='Texto mejorado correctamente.';
   }catch(e){
     out.textContent='Error: '+e.message;
   }
@@ -262,8 +263,10 @@ async function save(){
       headers:{'Content-Type':'application/json'},
       body:JSON.stringify({title,text})
     });
+
     const d=await r.json();
     if(!r.ok)throw new Error(d.error||'Error');
+
     out.textContent='Borrador guardado correctamente.';
     loadDrafts();
   }catch(e){
@@ -286,6 +289,7 @@ async function loadDrafts(){
     }
 
     box.innerHTML='';
+
     d.drafts.forEach(item=>{
       const div=document.createElement('div');
       div.className='item';
@@ -302,6 +306,7 @@ async function loadDrafts(){
       div.appendChild(heading);
       div.appendChild(paragraph);
       div.appendChild(date);
+
       box.appendChild(div);
     });
   }catch(e){
@@ -341,12 +346,10 @@ export default {
     }
 
     try {
-      // Panel principal
       if (path === "/" && request.method === "GET") {
         return html(PANEL);
       }
 
-      // Estado del Worker
       if (path === "/api/status" && request.method === "GET") {
         return response({
           ok: true,
@@ -357,7 +360,6 @@ export default {
         });
       }
 
-      // Reescritura mediante Gemini
       if (path === "/api/rewrite" && request.method === "POST") {
         const body = await request.json();
         const text = String(body.text || "").trim();
@@ -374,7 +376,6 @@ export default {
         });
       }
 
-      // Listado de borradores
       if (path === "/api/drafts" && request.method === "GET") {
         if (!env.DB) {
           return response(
@@ -393,7 +394,6 @@ export default {
         });
       }
 
-      // Guardar borrador
       if (path === "/api/drafts" && request.method === "POST") {
         if (!env.DB) {
           return response(
@@ -423,7 +423,6 @@ export default {
         });
       }
 
-      // Cron: base para futuras tareas programadas
       if (path === "/api/cron" && request.method === "GET") {
         return response({
           ok: true,
@@ -444,8 +443,6 @@ export default {
   },
 
   async scheduled(event, env, ctx) {
-    // Base del programador.
-    // La publicación automática se desarrollará en la siguiente etapa.
     ctx.waitUntil(
       Promise.resolve().then(() => {
         console.log("Scheduler ejecutado:", new Date().toISOString());

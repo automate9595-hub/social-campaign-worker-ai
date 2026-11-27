@@ -81,7 +81,9 @@
     var d = all(document, '[role="dialog"]').filter(visible);
     for (var i = d.length - 1; i >= 0; i--) {
       var b = all(d[i], '[role="textbox"][contenteditable="true"]').filter(visible)[0];
-      if (b) return { dialog: d[i], box: b };
+      // Solo el cuadro de publicacion, nunca un chat.
+      var post = d[i].querySelector('[aria-label="Publicar"],[aria-label="Post"]') || /crear publicaci|create post/i.test(d[i].innerText);
+      if (b && post) return { dialog: d[i], box: b };
     }
     return null;
   }
@@ -98,7 +100,7 @@
       b.style.cssText = 'position:fixed;left:10px;bottom:10px;z-index:2147483647;max-width:360px;padding:10px 14px;border-radius:8px;background:#12203a;color:#fff;font:14px/1.4 Arial,sans-serif;pointer-events:none';
       document.documentElement.appendChild(b);
     }
-    b.textContent = 'Social Campaign 1.8.0: ' + text;
+    b.textContent = 'Social Campaign 1.9.0: ' + text;
   }
   function step(text) { banner(text); try { chrome.runtime.sendMessage({ type: 'step', text: text }); } catch (e) {} }
 
@@ -124,11 +126,29 @@
     });
   }
 
+  // Boton flotante de abajo a la derecha, solo si su nombre dice que crea una publicacion.
+  function floating() {
+    return all(document, '[role="button"][aria-label]').filter(function (el) {
+      return visible(el) && !el.closest('[role="dialog"]') && /(crear|escribir|nueva|create|new).*(publicaci|post)/i.test(el.getAttribute('aria-label'));
+    });
+  }
+
+  // Si no aparece, baja de a poco; como ultimo recurso usa el boton flotante.
+  async function searchOpeners() {
+    for (var n = 0; n < 14; n++) {
+      var l = findOpeners();
+      if (l.length) return l;
+      if (n >= 3) window.scrollBy(0, 250);
+      await sleep(1500);
+    }
+    return floating().length ? floating() : null;
+  }
+
   // Toca "Escribe algo..." y reintenta si el cuadro no se abre.
   async function openComposer() {
     step('Buscando "Escribe algo..."');
     for (var i = 0; i < 4; i++) {
-      var list = await waitFor(function () { var l = findOpeners(); return l.length ? l : null; }, i ? 5000 : 30000);
+      var list = await searchOpeners();
       if (composer()) return composer();
       if (!list) break;
       var el = list[i % list.length];

@@ -1,6 +1,6 @@
 // Cada minuto pregunta al panel si hay una tarea lista y la publica en el grupo de Facebook
 // usando tu propia sesion de Chrome. Pausa entre grupos y tope diario incluidos.
-var VERSION = '1.8.0';
+var VERSION = '1.9.0';
 var busy = false;
 
 function get(k) { return chrome.storage.local.get(k); }
@@ -74,7 +74,7 @@ async function publish(cfg, job, dry) {
   if (!/(^|\.)facebook\.com$/i.test(u.hostname)) throw new Error('El enlace del grupo no es de Facebook.');
   u.hostname = 'www.facebook.com';
   var images = await loadImages(cfg, job);
-  var win = await chrome.windows.create({ url: u.toString(), type: 'normal', focused: true });
+  var win = await chrome.windows.create({ url: u.toString(), type: 'normal', focused: true, state: 'maximized' });
   var tabId = win.tabs[0].id;
   try {
     await waitComplete(tabId, 60000);

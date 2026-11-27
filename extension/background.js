@@ -1,6 +1,6 @@
 // Cada minuto pregunta al panel si hay una tarea lista y la publica en el grupo de Facebook
 // usando tu propia sesion de Chrome. Pausa entre grupos y tope diario incluidos.
-var VERSION = '2.0.0';
+var VERSION = '2.2.0';
 var busy = false;
 
 function get(k) { return chrome.storage.local.get(k); }
@@ -76,6 +76,7 @@ async function publish(cfg, job, dry) {
   var images = await loadImages(cfg, job);
   var win = await chrome.windows.create({ url: u.toString(), type: 'normal', focused: true, state: 'maximized' });
   var tabId = win.tabs[0].id;
+  await set({ win: win.id });
   try {
     await waitComplete(tabId, 60000);
     await sleep(2000);
@@ -101,6 +102,7 @@ async function publish(cfg, job, dry) {
       }
     }
     if (!res) throw new Error('No se pudo comunicar con la pagina de Facebook. Recarga la extension.');
+    if (!dry && !(await getCfg()).enabled) throw new Error('Detenida por vos antes de publicar.');
     var timer;
     var out = await Promise.race([
       chrome.tabs.sendMessage(tabId, { type: 'publish', text: job.text, images: images, dry: !!dry }),
@@ -193,7 +195,7 @@ async function tick(dry, forced) {
       await addLog('Error: ' + e.message);
       await status('Error: ' + e.message);
       if (!dry) {
-        await report(cfg, job.id, { ok: false, error: e.message });
+        await report(cfg, job.id, { ok: false, error: (await getCfg()).enabled ? e.message : 'Detenida por vos. ' + e.message });
         chrome.alarms.create('next', { when: Date.now() + (e.human ? 15 * 60000 : 2 * 60000) + 1000 });
         var pause = e.human ? 15 * 60000 : 2 * 60000;
         await set({ st: { day: st.day === today() ? st.day : today(), count: count, nextAt: Date.now() + 60000, pauseUntil: Date.now() + pause, pauseWhy: e.human ? 'Facebook pide verificacion' : 'revisa el error' } });
@@ -238,6 +240,23 @@ async function fromPanel(msg, origin) {
   await beat(cfg, 'Conectado');
   if (msg.action === 'captureStart') { await set({ capture: true, captured: [], captureError: '' }); await injectCapture(); return 'Capturador activado. Entrá a tus grupos en Facebook.'; }
   if (msg.action === 'captureStop') { await set({ capture: false }); return 'Capturador detenido.'; }
+  if (msg.action === 'pause' || msg.action === 'stop') {
+    cfg.enabled = false;
+    await set({ cfg: cfg, forced: null });
+    await beat(cfg, 'Pausado');
+    var w = (await get('win')).win;
+    if (msg.action === 'stop' && busy && w) { try { await chrome.windows.remove(w); } catch (e) {} return 'Detenido. No sale nada hasta que toques Reanudar.'; }
+    return busy ? 'En pausa: termina la publicación en curso y no sigue.' : 'En pausa. No sale nada hasta que toques Reanudar.';
+  }
+  if (msg.action === 'resume') {
+    cfg.enabled = true;
+    await set({ cfg: cfg });
+    var s = (await get('st')).st || {};
+    delete s.pauseUntil;
+    await set({ st: s });
+    tick(false).catch(function (e) { status('Error: ' + e.message); });
+    return 'Reanudado.';
+  }
   if (msg.action !== 'run') return 'Conectada (versión ' + VERSION + ').';
   if (!cfg.enabled) return 'La extensión está desactivada: marcá "Worker activo" en su ventanita.';
   if (busy) {

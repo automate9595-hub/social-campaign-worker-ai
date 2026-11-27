@@ -100,7 +100,7 @@
       b.style.cssText = 'position:fixed;left:10px;bottom:10px;z-index:2147483647;max-width:360px;padding:10px 14px;border-radius:8px;background:#12203a;color:#fff;font:14px/1.4 Arial,sans-serif;pointer-events:none';
       document.documentElement.appendChild(b);
     }
-    b.textContent = 'Social Campaign 2.0.0: ' + text;
+    b.textContent = 'Social Campaign 2.2.0: ' + text;
   }
   function step(text) { banner(text); try { chrome.runtime.sendMessage({ type: 'step', text: text }); } catch (e) {} }
 
@@ -133,13 +133,16 @@
     });
   }
 
-  // Si no aparece, baja de a poco; como ultimo recurso usa el boton flotante.
+  var SELL = /^(vender algo|vende algo|sell something)$/i;
+  // Espera 20 s arriba, sin mover la pagina; recien despues baja despacio.
   async function searchOpeners() {
-    for (var n = 0; n < 14; n++) {
+    window.scrollTo(0, 0);
+    for (var n = 0; n < 28; n++) {
       var l = findOpeners();
       if (l.length) return l;
-      if (n >= 3) window.scrollBy(0, 250);
-      await sleep(1500);
+      // "Vender algo" ya esta a la vista: se usa sin bajar (4 s de margen para "Escribe algo").
+      if (n >= 4 && byText(SELL).length) return null;
+      if (n >= 20) { window.scrollBy(0, 150); await sleep(2500); } else await sleep(1000);
     }
     return null;
   }
@@ -160,9 +163,9 @@
       var l = await waitFor(function () { var x = findOpeners(); return x.length ? x : null; }, 5000);
       if (l) { click(l[0].querySelector('span') || l[0]); var c = await waitFor(composer, 10000); if (c) return c; }
     }
-    window.scrollTo(0, 0);
-    await sleep(1000);
-    var tries = [['"Vender algo"', byText(/^(vender algo|vende algo|sell something)$/i)], ['el boton del lapiz', floating()]];
+    if (!byText(SELL).length) window.scrollTo(0, 0);
+    await sleep(1500);
+    var tries = [['"Vender algo"', byText(SELL)], ['el boton del lapiz', floating()]];
     var sale = false;
     for (var i = 0; i < tries.length; i++) {
       var el = tries[i][1][0];

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Social Campaign Worker",
-  "version": "2.0.0",
+  "version": "2.2.0",
   "description": "Publica en tus grupos de Facebook las tareas programadas en tu panel Social Campaign.",
   "permissions": [
     "storage",

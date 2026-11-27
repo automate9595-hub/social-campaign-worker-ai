@@ -198,6 +198,7 @@ select option{background:var(--bg);color:var(--ink)}
  <main>
   <div id="mbar"><i class="dot" id="rDot2"></i><span id="rInfo2">Worker de Windows: sin conexión</span></div>
   <div class="card" role="status"><b>Extensión: </b><span id="extText">no detectada. Instalala o recargala y apretá F5.</span>
+   <div class="actions"><button class="btn sm" data-act="pauseW" id="bPause">Pausar worker</button><button class="btn sm" data-act="resumeW" id="bResume" hidden>Reanudar worker</button><button class="btn del sm" data-act="stopW">Detener ahora</button></div>
    <div class="actions"><button class="btn ghost sm" data-act="theme">Cambiar tema</button><button class="btn ghost sm" data-act="sound">Probar sonidos</button></div></div>
   <div class="card"><b>Próxima publicación: </b><span id="timer" style="font-size:22px;font-weight:700;font-variant-numeric:tabular-nums">sin cola</span></div>
   <div class="stats">
@@ -613,7 +614,15 @@ window.addEventListener("message",function(e){
  refresh(true);
 });
 
+window.addEventListener("message",function(e){
+ if(e.source!==window||!e.data||e.data.sc!=="power")return;
+ $("bPause").hidden=!e.data.on;$("bResume").hidden=e.data.on;
+});
+
 var ACT={
+ pauseW(){ext("pause")},
+ resumeW(){ext("resume")},
+ stopW(){if(confirm("¿Detener ya? Se cierra la publicación en curso y no sale nada más."))ext("stop")},
  capStart(){ext("captureStart");toast("Activando... mirá el estado arriba, en Extensión")},
  capStop(){ext("captureStop")},
  prevMonth(){C.month.setMonth(C.month.getMonth()-1);C.day="";return loadCal()},

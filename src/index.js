@@ -99,7 +99,7 @@ async function promoteDue(env) {
 /*  Gemini                                                             */
 /* ------------------------------------------------------------------ */
 
-async function rewriteText(content, env) {
+async function rewriteText(content, env, instruction) {
  const keys = (env.GEMINI_API_KEYS || env.GEMINI_API_KEY || "")
   .split(",").map(x => x.trim()).filter(Boolean);
  if (!keys.length) throw Error("Falta GEMINI_API_KEYS.");
@@ -119,7 +119,7 @@ async function rewriteText(content, env) {
       signal: controller.signal,
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-       contents: [{ parts: [{ text:
+       contents: [{ parts: [{ text: instruction ? instruction + "\n\n" + content :
         "Reescribí el siguiente texto para una publicación comercial de redes sociales. " +
         "Conservá fielmente los datos, no inventes precios, promociones, productos ni hechos. " +
         "Usá un tono atractivo, claro y natural. Respondé únicamente con el texto final.\n\n" + content
@@ -176,6 +176,14 @@ async function handle(request, env) {
    const content = String(body.content || "").trim();
    if (!content) return json({ error: "Texto vacío." }, 400);
    return json({ content: await rewriteText(content, env) });
+  }
+
+  if (path === "/api/listing-title" && method === "POST") {
+   const content = String((await request.json()).content || "").trim();
+   if (!content) return json({ error: "Texto vacío." }, 400);
+   const title = await rewriteText(content, env,
+    "Escribí un título de venta de hasta 80 caracteres para este aviso. No inventes datos ni precios. Respondé solo con el título, sin comillas.");
+   return json({ title: title.split("\n")[0].replace(/^["*# ]+|["* ]+$/g, "").slice(0, 100) });
   }
 
   /* ---------- Destinos ---------- */

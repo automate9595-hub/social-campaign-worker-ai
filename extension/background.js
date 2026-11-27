@@ -1,6 +1,6 @@
 // Cada minuto pregunta al panel si hay una tarea lista y la publica en el grupo de Facebook
 // usando tu propia sesion de Chrome. Pausa entre grupos y tope diario incluidos.
-var VERSION = '1.9.0';
+var VERSION = '2.0.0';
 var busy = false;
 
 function get(k) { return chrome.storage.local.get(k); }
@@ -215,7 +215,7 @@ chrome.runtime.onStartup.addListener(function () { tick(false); });
 // Se ejecuta en el contexto de la pagina, sobre el campo que tiene el foco.
 function writeInPage(method, text) {
   var el = document.activeElement;
-  if (!el || !el.isContentEditable) return;
+  if (!el || !(el.isContentEditable || /^(INPUT|TEXTAREA)$/.test(el.tagName))) return;
   document.execCommand('selectAll', false, null);
   if (method === 'paste') {
     var dt = new DataTransfer();
@@ -286,6 +286,11 @@ async function saveGroup(msg) {
 
 chrome.runtime.onMessage.addListener(function (msg, sender, send) {
   if (msg && msg.type === 'alive') return;
+  if (msg && msg.type === 'title') {
+    getCfg().then(function (cfg) { return apiJson(cfg, '/api/listing-title', 'POST', { content: msg.text }); })
+      .then(function (r) { send({ title: r.title }); }, function () { send({}); });
+    return true;
+  }
   if (msg && msg.type === 'group') {
     saving = saving.then(function () { return saveGroup(msg); }).catch(function (e) { return set({ captureError: e.message }); });
     return;

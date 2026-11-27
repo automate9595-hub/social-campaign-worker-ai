@@ -100,7 +100,7 @@
       b.style.cssText = 'position:fixed;left:10px;bottom:10px;z-index:2147483647;max-width:360px;padding:10px 14px;border-radius:8px;background:#12203a;color:#fff;font:14px/1.4 Arial,sans-serif;pointer-events:none';
       document.documentElement.appendChild(b);
     }
-    b.textContent = 'Social Campaign 1.9.0: ' + text;
+    b.textContent = 'Social Campaign 2.0.0: ' + text;
   }
   function step(text) { banner(text); try { chrome.runtime.sendMessage({ type: 'step', text: text }); } catch (e) {} }
 
@@ -141,7 +141,140 @@
       if (n >= 3) window.scrollBy(0, 250);
       await sleep(1500);
     }
-    return floating().length ? floating() : null;
+    return null;
+  }
+
+  function byText(re, sel) {
+    return all(document, sel || '[role="button"],span').filter(function (el) {
+      return visible(el) && !el.closest('[role="dialog"]') && (re.test((el.innerText || '').trim()) || re.test((el.getAttribute('aria-label') || '').trim()));
+    });
+  }
+
+  // 2da opcion "Vender algo" / "Vende algo"; 3ra, el boton del lapiz.
+  async function otherOpeners() {
+    var talk = byText(/^(conversaci[oó]n|discusi[oó]n|discussion)$/i, '[role="tab"],a')[0];
+    if (talk) {
+      step('Probando la pestaña Conversacion');
+      click(talk);
+      await sleep(3000);
+      var l = await waitFor(function () { var x = findOpeners(); return x.length ? x : null; }, 5000);
+      if (l) { click(l[0].querySelector('span') || l[0]); var c = await waitFor(composer, 10000); if (c) return c; }
+    }
+    window.scrollTo(0, 0);
+    await sleep(1000);
+    var tries = [['"Vender algo"', byText(/^(vender algo|vende algo|sell something)$/i)], ['el boton del lapiz', floating()]];
+    var sale = false;
+    for (var i = 0; i < tries.length; i++) {
+      var el = tries[i][1][0];
+      if (!el || !document.contains(el)) continue;
+      step('Tocando ' + tries[i][0]);
+      click(el.querySelector('span') || el);
+      var found = await waitFor(function () { return composer() || (saleVisible() ? { sale: true } : null); }, 12000);
+      if (found) return found;
+    }
+    return null;
+  }
+
+  var PRICE = '1';
+  function field(re) {
+    var list = all(document, 'label,input[aria-label],textarea[aria-label]').filter(visible);
+    for (var i = 0; i < list.length; i++) {
+      var el = list[i];
+      if (!re.test((el.getAttribute('aria-label') || el.innerText || '').trim())) continue;
+      var c = /^(INPUT|TEXTAREA)$/.test(el.tagName) ? el : el.querySelector('input,textarea');
+      if (c) return c;
+    }
+    return null;
+  }
+  var TITLE = /^t[ií]tulo|^title/i;
+  function card() { return all(document, '[role="dialog"] span,[role="dialog"] [role="button"]').filter(function (e) { return visible(e) && /^(art[ií]culo en venta|item for sale)$/i.test((e.innerText || '').trim()); })[0]; }
+  function saleVisible() { return !!(field(TITLE) || card()); }
+  function button(re) { return all(document, '[role="button"],button').filter(function (e) { return visible(e) && re.test((e.getAttribute('aria-label') || e.innerText || '').trim()); }).pop(); }
+  function enabled(re) { var b = button(re); return b && b.getAttribute('aria-disabled') !== 'true' && !b.disabled ? b : null; }
+
+  async function fill(re, value, name) {
+    var el = await waitFor(function () { return field(re); }, 10000);
+    if (!el) fail('No se encontro el campo ' + name + '.');
+    el.scrollIntoView({ block: 'center' });
+    click(el);
+    el.focus();
+    await chrome.runtime.sendMessage({ type: 'write', method: 'insert', text: value });
+    await sleep(800);
+    if (!el.value) fail('No se pudo completar ' + name + '.');
+  }
+
+  // Baja la pagina y los paneles con desplazamiento.
+  function scrollDown() {
+    window.scrollBy(0, 300);
+    all(document, 'div').forEach(function (d) {
+      if (d.scrollHeight > d.clientHeight + 40 && /auto|scroll/.test(getComputedStyle(d).overflowY)) d.scrollTop += 300;
+    });
+  }
+
+  // Formulario "Articulo en venta": fotos, titulo, precio, estado y descripcion.
+  async function sell(msg) {
+    step('Eligiendo "Articulo en venta"');
+    var c = !field(TITLE) && card();
+    if (c) click(c);
+    if (!(await waitFor(function () { return field(TITLE); }, 15000))) fail('No se abrio el formulario de articulo en venta.');
+    await sleep(1500);
+
+    var files = toFiles(msg.images || []);
+    if (!files.length) fail('Para vender hace falta al menos una foto en la campaña.');
+    step('Subiendo ' + files.length + ' foto(s)');
+    var inputs = all(document, 'input[type="file"]').filter(function (i) { return /image/.test(i.accept || ''); });
+    if (!inputs.length) fail('No se encontro donde subir las fotos.');
+    var before = document.images.length;
+    setFiles(inputs[inputs.length - 1], files);
+    if (!(await waitFor(function () { return document.images.length > before || /(Fotos|Photos)\s*·\s*[1-9]/.test(document.body.innerText); }, 45000))) fail('No se cargaron las fotos.');
+    await sleep(2000 + files.length * 1200);
+
+    step('La IA esta creando el titulo');
+    var r = await chrome.runtime.sendMessage({ type: 'title', text: msg.text });
+    var title = (r && r.title) || msg.text.split('\n')[0].slice(0, 80);
+    step('Completando titulo y precio');
+    await fill(TITLE, title, 'Titulo');
+    await fill(/^(precio|price)/i, PRICE, 'Precio');
+
+    step('Estado: Nuevo');
+    var state = all(document, '[role="combobox"],label').filter(function (e) { return visible(e) && /^(estado|condition)/i.test((e.getAttribute('aria-label') || e.innerText || '').trim()); })[0];
+    if (!state) fail('No se encontro el campo Estado.');
+    click(state);
+    var option = await waitFor(function () { return all(document, '[role="option"],[role="menuitem"]').filter(function (e) { return visible(e) && /^(nuevo|new)$/i.test((e.innerText || '').trim()); })[0]; }, 10000);
+    if (!option) fail('No se encontro la opcion Nuevo.');
+    click(option);
+    await sleep(1000);
+
+    step('Completando la descripcion');
+    var DESC = /^(descripci[oó]n|description)/i;
+    if (!field(DESC)) {
+      var more = button(/^(m[aá]s detalles|more details)/i) || all(document, 'span').filter(function (e) { return visible(e) && /^(m[aá]s detalles|more details)$/i.test((e.innerText || '').trim()); })[0];
+      if (more) click(more);
+    }
+    await fill(DESC, msg.text, 'Descripcion');
+    await sleep(1500);
+
+    var NEXT = /^(siguiente|next)$/i, POST = /^(publicar|post|publish)$/i;
+    if (!button(POST)) {
+      var next = await waitFor(function () { return enabled(NEXT); }, 30000);
+      if (!next) fail('El boton Siguiente quedo desactivado: falta algun dato obligatorio.');
+      click(next);
+      await sleep(3000);
+    }
+    step('Bajando hasta "Publicar"');
+    var post = null;
+    for (var n = 0; n < 20 && !(post = enabled(POST)); n++) { scrollDown(); await sleep(1500); }
+    if (!post) fail('No se encontro el boton Publicar de la venta.');
+    post.scrollIntoView({ block: 'center' });
+    await sleep(800);
+    if (msg.dry) return { ok: true, dry: true, note: 'Prueba lista: venta completada, sin publicar.' };
+    step('Publicando');
+    await chrome.runtime.sendMessage({ type: 'clicked' });
+    click(post);
+    var closed = await waitFor(function () { return !document.contains(post) || !visible(post); }, 120000);
+    if (!closed) fail('La venta no se confirmo (el formulario sigue abierto).');
+    await sleep(3000);
+    return { ok: true, note: 'Publicada como articulo en venta.' };
   }
 
   // Toca "Escribe algo..." y reintenta si el cuadro no se abre.
@@ -159,7 +292,9 @@
       var c = await waitFor(composer, 10000);
       if (c) return c;
     }
-    fail('No se pudo abrir el cuadro "Escribe algo..." en este grupo.');
+    var other = await otherOpeners();
+    if (other) return other;
+    fail('No se encontro "Escribe algo", "Vender algo" ni el boton para publicar.');
   }
 
   async function attach(files) {
@@ -189,6 +324,7 @@
     if (findByText(document.body, JOIN, '[role="button"],button')) fail('Tu cuenta todavia no es miembro de este grupo.');
 
     var c = await openComposer();
+    if (c.sale) return sell(msg);
     await sleep(1500);
     step('Escribiendo la descripcion');
     await writeText(msg.text);

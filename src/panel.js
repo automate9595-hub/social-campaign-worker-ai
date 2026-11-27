@@ -249,6 +249,7 @@ select option{background:var(--bg);color:var(--ink)}
   <section id="tab-schedule" hidden>
    <h1>Programar</h1>
    <p class="lead">Elegí una campaña y los grupos. El worker de Windows las publica de a una, con pausas entre cada grupo.</p>
+   <div class="actions" style="margin:0 0 14px"><button class="btn del" data-act="clearQueue">Cancelar todas las publicaciones en cola</button></div>
    <div class="card">
     <h2>Nueva publicación</h2>
     <label class="f" for="jobCampaign">Campaña</label>

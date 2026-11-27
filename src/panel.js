@@ -60,7 +60,7 @@ h1{margin:0 0 4px;font-size:26px;letter-spacing:-.02em}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:18px;margin-bottom:16px}
 .card h2{margin:0 0 12px;font-size:16px}
 label.f{display:block;font-size:13px;font-weight:600;color:var(--muted);margin:12px 0 5px}
-input[type=text],input[type=url],input[type=date],input[type=time],input[type=number],textarea,select{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--soft)}
+input[type=text],input[type=url],input[type=date],input[type=time],input[type=password],input[type=number],textarea,select{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--soft)}
 input:focus,textarea:focus,select:focus{border-color:var(--accent);outline:none;box-shadow:0 0 0 3px var(--accent-soft)}
 textarea{min-height:130px;resize:vertical}
 .row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
@@ -341,7 +341,8 @@ select option{background:var(--bg);color:var(--ink)}
 <div id="toast" role="status" aria-live="polite"></div>
 
 <script>
-var TOKEN = "__ADMIN_TOKEN__";
+var TOKEN = "";
+try{TOKEN=localStorage.getItem("sc_token")||""}catch(e){}
 var S = {dest:[],camp:[],jobs:[],pending:[],when:"now",busy:false};
 var $ = function(id){return document.getElementById(id)};
 
@@ -353,6 +354,7 @@ async function api(path,method,body){
  var h={"X-Admin-Token":TOKEN};
  if(body)h["Content-Type"]="application/json";
  var r=await fetch(path,{method:method||"GET",headers:h,body:body?JSON.stringify(body):null});
+ if(r.status===401&&TOKEN){TOKEN="";try{localStorage.removeItem("sc_token")}catch(e){}showLogin()}
  var d=await r.json().catch(function(){return {error:"Respuesta inválida del servidor"}});
  if(!r.ok)throw Error(d.error||("Error "+r.status));
  return d;
@@ -499,7 +501,7 @@ function renderNewThumbs(){
 
 /* ---------- Acciones ---------- */
 /* ---------- Extensión ---------- */
-function ext(action,id){window.postMessage({sc:"panel",action:action,token:TOKEN,id:id},location.origin)}
+function ext(action,id){if(!TOKEN&&action!=="logout")return;window.postMessage({sc:"panel",action:action,token:TOKEN,user:store("sc_user"),id:id},location.origin)}
 window.addEventListener("message",function(e){
  if(e.source!==window||!e.data)return;
  if(e.data.sc==="ready")ext("hello");
@@ -619,7 +621,42 @@ window.addEventListener("message",function(e){
  $("bPause").hidden=!e.data.on;$("bResume").hidden=e.data.on;
 });
 
+/* ---------- Cuentas ---------- */
+function store(k,v){try{if(v===undefined)return localStorage.getItem(k)||"";localStorage.setItem(k,v)}catch(e){return ""}}
+function showLogin(){
+ if($("login"))return;
+ var d=document.createElement("div");d.id="login";
+ d.style.cssText="position:fixed;inset:0;z-index:50;display:flex;align-items:center;justify-content:center;padding:16px;background:var(--bg)";
+ d.innerHTML='<form class="card" style="width:100%;max-width:360px"><h2 id="lTitle">Iniciar sesión</h2><label class="f">Usuario</label><input type="text" id="lUser" autocomplete="username"><label class="f">Contraseña</label><input type="password" id="lPass" autocomplete="current-password" style="width:100%"><p id="lMsg" role="alert"></p><button class="btn" type="submit">Entrar</button></form>';
+ document.body.appendChild(d);
+ var setup=false;
+ fetch("/api/auth/state").then(function(r){return r.json()}).then(function(s){setup=s.setup;if(setup){$("lTitle").textContent="Crear tu cuenta de administrador";$("lMsg").textContent="Elegí usuario y contraseña (8 o más caracteres)."}});
+ d.querySelector("form").onsubmit=async function(e){
+  e.preventDefault();
+  var r=await fetch(setup?"/api/auth/setup":"/api/auth/login",{method:"POST",body:JSON.stringify({username:$("lUser").value,password:$("lPass").value})});
+  var x=await r.json();
+  if(!r.ok){$("lMsg").textContent=x.error;return}
+  store("sc_token",x.token);store("sc_user",x.username);store("sc_admin",x.admin?"1":"");location.reload();
+ };
+}
+function account(){
+ if(!TOKEN)return showLogin();
+ var box=document.createElement("div");box.className="card";
+ box.innerHTML='<b>Cuenta: '+esc(store("sc_user"))+'</b> <button class="btn ghost sm" data-act="logout">Cerrar sesión</button>'+(store("sc_admin")?'<div class="row"><div><label class="f">Usuario nuevo (o existente para cambiar su clave)</label><input type="text" id="nUser" autocomplete="off"></div><div><label class="f">Contraseña</label><input type="password" id="nPass" autocomplete="new-password" style="width:100%"></div></div><div class="actions"><button class="btn sm" data-act="addUser">Guardar usuario</button></div><div id="users"></div>':'');
+ var main=$("extText").closest(".card").parentNode;main.insertBefore(box,main.firstChild);
+ if(store("sc_admin"))listUsers();
+}
+async function listUsers(){
+ var r=await api("/api/users");
+ $("users").innerHTML=r.items.map(function(u){return '<p>'+esc(u.username)+(u.is_admin?" (administrador)":' <button class="btn del sm" data-act="delUser" data-id="'+u.id+'">Quitar</button>')+'</p>'}).join("");
+}
+account();
+
 var ACT={
+ async logout(){ext("logout");try{await api("/api/auth/logout","POST")}catch(e){}store("sc_token","");setTimeout(function(){location.reload()},800)},
+ async addUser(){var r=await api("/api/users","POST",{username:$("nUser").value,password:$("nPass").value});$("nUser").value="";$("nPass").value="";toast(r.changed?"Contraseña cambiada":"Usuario creado");listUsers()},
+ async delUser(el){if(!confirm("¿Quitar este usuario? No podrá entrar ni publicar."))return;await api("/api/users/"+el.dataset.id,"DELETE");listUsers()},
+
  pauseW(){ext("pause")},
  resumeW(){ext("resume")},
  stopW(){if(confirm("¿Detener ya? Se cierra la publicación en curso y no sale nada más."))ext("stop")},

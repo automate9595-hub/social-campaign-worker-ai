@@ -1,6 +1,6 @@
 // Cada minuto pregunta al panel si hay una tarea lista y la publica en el grupo de Facebook
 // usando tu propia sesion de Chrome. Pausa entre grupos y tope diario incluidos.
-var VERSION = '2.2.0';
+var VERSION = '2.3.0';
 var busy = false;
 
 function get(k) { return chrome.storage.local.get(k); }
@@ -234,6 +234,17 @@ async function fromPanel(msg, origin) {
   var linked = '';
   if (cfg.workerUrl) try { linked = new URL(/^https?:/i.test(cfg.workerUrl) ? cfg.workerUrl : 'https://' + cfg.workerUrl).origin; } catch (e) {}
   if (linked && linked !== origin) return 'La extensión está vinculada a otra dirección (' + linked + '). Corregila en la ventanita de la extensión.';
+  if (msg.action === 'logout') {
+    cfg.adminToken = '';
+    await set({ cfg: cfg, capture: false, forced: null });
+    return 'Sesión cerrada en esta computadora.';
+  }
+  // Cambio de cuenta: no se arrastra nada de la anterior.
+  if (cfg.user !== msg.user) {
+    if (busy) return 'Hay una publicación en curso de otra cuenta. Esperá a que termine y apretá F5.';
+    await set({ pending: null, current: null, forced: null, st: {}, log: [], captured: [], capture: false });
+  }
+  cfg.user = msg.user;
   cfg.workerUrl = origin;
   cfg.adminToken = msg.token;
   await set({ cfg: cfg });

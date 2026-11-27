@@ -4,7 +4,7 @@
   function say(text) { window.postMessage({ sc: 'ext', text: text }, location.origin); }
   window.addEventListener('message', function (e) {
     if (e.source !== window || !e.data || e.data.sc !== 'panel') return;
-    chrome.runtime.sendMessage({ type: 'panel', action: e.data.action, token: e.data.token, id: e.data.id }, function (r) {
+    chrome.runtime.sendMessage({ type: 'panel', action: e.data.action, token: e.data.token, user: e.data.user, id: e.data.id }, function (r) {
       say(chrome.runtime.lastError || !r ? 'La extensión no respondió. Recargala y apretá F5.' : r.text);
     });
   });

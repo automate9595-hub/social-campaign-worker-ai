@@ -1,4 +1,5 @@
 import { HTML } from "./panel.js";
+import { handleAuth, ensureAuth, scoped } from "./auth.js";
 
 /* ------------------------------------------------------------------ */
 /*  Utilidades                                                         */
@@ -17,21 +18,8 @@ function json(data, status = 200) {
  });
 }
 
-// La clave de administrador sale del secreto SOCIAL_ADMIN_TOKEN de Cloudflare
-// y se inyecta en el panel al servirlo: no hay que escribirla y no queda
-// guardada en el repositorio.
-function html(env) {
- const token = JSON.stringify(String(env.SOCIAL_ADMIN_TOKEN || "")).replace(/</g, "\\u003c");
- return new Response(HTML.replace('"__ADMIN_TOKEN__"', () => token), {
-  headers: { ...SECURITY_HEADERS, "Content-Type": "text/html;charset=UTF-8" }
- });
-}
-
-function safeEq(a, b) {
- if (a.length !== b.length) return false;
- let r = 0;
- for (let i = 0; i < a.length; i++) r |= a.charCodeAt(i) ^ b.charCodeAt(i);
- return r === 0;
+function html() {
+ return new Response(HTML, { headers: { ...SECURITY_HEADERS, "Content-Type": "text/html;charset=UTF-8" } });
 }
 
 const MAX_IMAGES_PER_CAMPAIGN = 6;
@@ -41,11 +29,12 @@ const MAX_B64_LENGTH = 1500000;
 /*  Esquema (se crea / completa solo, no hay que ejecutar SQL a mano)  */
 /* ------------------------------------------------------------------ */
 
-let schemaReady = null;
+const schemas = new Map();
 
 function ensureSchema(env) {
- if (schemaReady) return schemaReady;
- schemaReady = (async () => {
+ const mine = env.PREFIX || "";
+ if (schemas.has(mine)) return schemas.get(mine);
+ const ready = (async () => {
   const db = env.DB;
   await db.batch([
    db.prepare("CREATE TABLE IF NOT EXISTS sc_destinations (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, platform TEXT NOT NULL DEFAULT 'facebook', destination_type TEXT NOT NULL DEFAULT 'group', destination_url TEXT, enabled INTEGER NOT NULL DEFAULT 1)"),
@@ -79,8 +68,9 @@ function ensureSchema(env) {
    ).run();
    await db.prepare("INSERT OR REPLACE INTO sc_kv (k,v) VALUES ('tz_migrated','1')").run();
   }
- })().catch(e => { schemaReady = null; throw e; });
- return schemaReady;
+ })().catch(e => { schemas.delete(mine); throw e; });
+ schemas.set(mine, ready);
+ return ready;
 }
 
 async function promoteDue(env) {
@@ -157,16 +147,15 @@ async function handle(request, env) {
  const method = request.method;
 
  if (method === "OPTIONS") return new Response(null, { status: 204, headers: SECURITY_HEADERS });
- if (path === "/" && method === "GET") return html(env);
+ if (path === "/" && method === "GET") return html();
  if (path === "/api/status" && method === "GET")
   return json({ ok: true, worker: "active", time: new Date().toISOString() });
 
  if (!env.DB) return json({ error: "No está configurada la vinculación D1 DB." }, 500);
- const auth = request.headers.get("X-Admin-Token") || "";
- if (!env.SOCIAL_ADMIN_TOKEN || !safeEq(auth, String(env.SOCIAL_ADMIN_TOKEN)))
-  return json({ error: "Acceso no autorizado." }, 401);
-
  try {
+  const auth = await handleAuth(request, env, path, json);
+  if (auth.response) return auth.response;
+  env = scoped(env, auth.user.id);
   await ensureSchema(env);
   const nowIso = new Date().toISOString();
 
@@ -463,6 +452,14 @@ export default {
  },
  async scheduled(event, env, ctx) {
   if (!env.DB) return;
-  ctx.waitUntil(ensureSchema(env).then(() => promoteDue(env)));
+  ctx.waitUntil((async () => {
+   await ensureAuth(env.DB);
+   const users = await env.DB.prepare("SELECT id FROM auth_users WHERE active=1").all();
+   for (const u of users.results || []) {
+    const own = scoped(env, u.id);
+    await ensureSchema(own);
+    await promoteDue(own);
+   }
+  })());
  }
 };

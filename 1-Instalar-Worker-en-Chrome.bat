@@ -1,19 +1,19 @@
 @echo off
-chcp 65001 >nul
-cd /d "%~dp0"
+set "DEST=%LOCALAPPDATA%\SocialCampaignExtension"
+echo ===== INSTALAR O ACTUALIZAR LA EXTENSION =====
+xcopy "%~dp0extension" "%DEST%\" /E /I /Y /Q >nul
+if errorlevel 1 (echo No se pudo copiar. Descomprimi el zip antes de abrir este archivo.& pause & exit /b 1)
+echo| set /p="%DEST%" | clip
 echo.
-echo ===== INSTALAR EL WORKER EN CHROME (se hace una sola vez) =====
+echo Archivos copiados. La carpeta ya quedo copiada en el portapapeles.
 echo.
-echo Se van a abrir dos cosas: la carpeta "extension" y la pagina de extensiones de Chrome.
+echo PRIMERA VEZ, en Chrome:
+echo   1) Escribi chrome://extensions en la barra y apreta Enter.
+echo   2) Activa "Modo de desarrollador".
+echo   3) "Cargar descomprimida", pega con Ctrl+V en "Carpeta" y acepta.
+echo   4) Abri tu panel, inicia sesion y apreta F5.
 echo.
-echo   1) En Chrome, arriba a la derecha, activa "Modo de desarrollador".
-echo   2) Toca "Cargar descomprimida" y elegi la carpeta "extension" que se abrio.
-echo   3) Toca el icono de la extension (puzzle) y fijala.
-echo   4) En su ventana pega la URL de tu panel y la clave de administrador. Guardar.
-echo   5) Entra a Facebook en Chrome con tu cuenta (si no lo estas).
+echo SI YA ESTABA INSTALADA: en chrome://extensions toca el boton de recargar.
 echo.
-echo Despues deja Chrome abierto: el worker busca tareas solo, cada minuto.
-echo.
-start "" explorer "%~dp0extension"
-start "" chrome "chrome://extensions"
+start "" chrome
 pause
